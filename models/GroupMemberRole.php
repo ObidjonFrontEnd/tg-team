@@ -1,0 +1,58 @@
+<?php
+
+declare(strict_types=1);
+
+namespace app\models;
+
+use yii\db\ActiveRecord;
+use yii\db\ActiveQuery;
+
+/**
+ * Роль участника «по умолчанию» в группе (вне контекста конкретной встречи).
+ * Используется как предзаполнение при создании новой встречи.
+ *
+ * @property int $id
+ * @property int $group_id
+ * @property int $user_id
+ * @property int $role_id
+ */
+class GroupMemberRole extends ActiveRecord
+{
+    public static function tableName(): string
+    {
+        return '{{%group_member_roles}}';
+    }
+
+    public function getRole(): ActiveQuery
+    {
+        return $this->hasOne(Role::class, ['id' => 'role_id']);
+    }
+
+    /**
+     * Faqat "haqiqiy" (maxsus) rollarni qaytaradi — «Ishtirokchi» hech qachon bazada saqlanmaydi,
+     * u faqat ro'yxat bo'sh bo'lganda ko'rsatiladigan hisoblanadigan (computed) fallback.
+     * Shu tufayli "odam ham maxsus rolga ega, ham Ishtirokchi" degan chalkashlik bo'lmaydi.
+     *
+     * @return int[]
+     */
+    public static function roleIdsFor(int $groupId, int $userId): array
+    {
+        $ishtirokchiId = Role::ishtirokchi()?->id;
+        $query = self::find()->where(['group_id' => $groupId, 'user_id' => $userId]);
+        if ($ishtirokchiId !== null) {
+            $query->andWhere(['<>', 'role_id', $ishtirokchiId]);
+        }
+
+        return $query->select('role_id')->column();
+    }
+
+    public static function toggle(int $groupId, int $userId, int $roleId): void
+    {
+        $existing = self::find()->where(['group_id' => $groupId, 'user_id' => $userId, 'role_id' => $roleId])->one();
+        if ($existing) {
+            $existing->delete();
+        } else {
+            (new self(['group_id' => $groupId, 'user_id' => $userId, 'role_id' => $roleId]))->save(false);
+        }
+    }
+}

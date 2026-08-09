@@ -1,0 +1,47 @@
+services:
+  app:
+    build: .
+    working_dir: /app
+    environment:
+      TZ: Asia/Tashkent
+    volumes:
+      - ./:/app:delegated
+    ports:
+      - '8080:8080'
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      TZ: Asia/Tashkent
+      POSTGRES_DB: ${DB_NAME:-tgteam}
+      POSTGRES_USER: ${DB_USER:-tgteam}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-tgteam}
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-tgteam}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Telegram webhook uchun tashqi (public) URL — Docker Desktop'da alohida konteyner sifatida
+  # ko'rinadi, shu yerdan qulay yoqib/o'chirish mumkin. Authtoken .env dagi NGROK_AUTHTOKEN'dan olinadi.
+  ngrok:
+    image: ngrok/ngrok:latest
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
+    command: ["http", "app:8080"]
+    ports:
+      - '4040:4040'
+    depends_on:
+      - app
+
+volumes:
+  pgdata:
