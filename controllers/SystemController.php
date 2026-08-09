@@ -19,7 +19,8 @@ class SystemController extends Controller
 
     public function actionMigrate(): Response
     {
-        $dbOk = $this->checkDbConnection();
+        $error = null;
+        $dbOk = $this->checkDbConnection($error);
 
         $runOutput = '';
         if ($dbOk && Yii::$app->request->isPost) {
@@ -31,7 +32,27 @@ class SystemController extends Controller
         Yii::$app->response->format = Response::FORMAT_HTML;
         $dbStatusHtml = $dbOk
             ? '<span style="color:#0a0;font-weight:bold;">true</span> — baza bilan bog\'lanish bor'
-            : '<span style="color:#c00;font-weight:bold;">false</span> — bazaga ulanib bo\'lmadi (.env dagi DB_* qiymatlarini tekshiring)';
+            : '<span style="color:#c00;font-weight:bold;">false</span> — bazaga ulanib bo\'lmadi';
+
+        $debugRows = [
+            'getenv(DB_HOST)' => getenv('DB_HOST'),
+            'getenv(DB_PORT)' => getenv('DB_PORT'),
+            'getenv(DB_NAME)' => getenv('DB_NAME'),
+            'getenv(DB_USER)' => getenv('DB_USER'),
+            'Yii params db.dsn (haqiqatda ishlatilayotgan)' => Yii::$app->db->dsn ?? '(noma\'lum)',
+            '.env fayli mavjudmi' => file_exists(Yii::getAlias('@app/.env')) ? 'ha' : 'yo\'q',
+            '.env fayl vaqti (mtime)' => file_exists(Yii::getAlias('@app/.env')) ? date('Y-m-d H:i:s', filemtime(Yii::getAlias('@app/.env'))) : '—',
+            'PHP joriy vaqti (server)' => date('Y-m-d H:i:s'),
+        ];
+        $debugHtml = '';
+        foreach ($debugRows as $label => $value) {
+            $debugHtml .= '<tr><td style="padding:4px 10px;color:#666;">' . htmlspecialchars($label) . '</td><td style="padding:4px 10px;"><b>' . htmlspecialchars((string) $value) . '</b></td></tr>';
+        }
+
+        $errorHtml = $error !== null
+            ? '<h3 style="color:#c00;">Xatolik matni:</h3><pre style="background:#fee;padding:15px;white-space:pre-wrap;">' . htmlspecialchars($error) . '</pre>'
+            : '';
+
         $pendingHtml = htmlspecialchars($pendingOutput);
         $runOutputHtml = $runOutput !== '' ? '<h3>Natija:</h3><pre style="background:#f4f4f4;padding:15px;white-space:pre-wrap;">' . htmlspecialchars($runOutput) . '</pre>' : '';
         $button = $dbOk
@@ -44,6 +65,9 @@ class SystemController extends Controller
 <body style="font-family: monospace; max-width: 800px; margin: 40px auto;">
 <h2>Ma'lumotlar bazasi migratsiyalari</h2>
 <p><b>Bazaga ulanish:</b> {$dbStatusHtml}</p>
+<h3>Diagnostika (hozir PHP nimani ko'ryapti):</h3>
+<table style="border-collapse:collapse;background:#f4f4f4;">{$debugHtml}</table>
+{$errorHtml}
 <h3>Hali qo'llanilmagan migratsiyalar:</h3>
 <pre style="background:#f4f4f4;padding:15px;white-space:pre-wrap;">{$pendingHtml}</pre>
 {$button}
@@ -52,13 +76,15 @@ class SystemController extends Controller
 HTML);
     }
 
-    private function checkDbConnection(): bool
+    private function checkDbConnection(?string &$error = null): bool
     {
         try {
             Yii::$app->db->open();
 
             return true;
         } catch (\Throwable $e) {
+            $error = $e->getMessage();
+
             return false;
         }
     }
