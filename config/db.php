@@ -1,14 +1,14 @@
 <?php
 
-$host = getenv('DB_HOST') ?: 'db';
-$port = getenv('DB_PORT') ?: '5432';
-$name = getenv('DB_NAME') ?: 'tgteam';
+$host = env('DB_HOST', 'db');
+$port = env('DB_PORT', '5432');
+$name = env('DB_NAME', 'tgteam');
 
 return [
     'class' => \yii\db\Connection::class,
     'dsn' => "pgsql:host=$host;port=$port;dbname=$name",
-    'username' => getenv('DB_USER') ?: 'tgteam',
-    'password' => getenv('DB_PASSWORD') ?: 'tgteam',
+    'username' => env('DB_USER', 'tgteam'),
+    'password' => env('DB_PASSWORD', 'tgteam'),
     'charset' => 'utf8',
 
     // CURRENT_TIMESTAMP (created_at va h.k.) server vaqtida emas, Toshkent vaqtida hisoblansin —

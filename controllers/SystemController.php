@@ -35,10 +35,11 @@ class SystemController extends Controller
             : '<span style="color:#c00;font-weight:bold;">false</span> — bazaga ulanib bo\'lmadi';
 
         $debugRows = [
-            'getenv(DB_HOST)' => getenv('DB_HOST'),
-            'getenv(DB_PORT)' => getenv('DB_PORT'),
-            'getenv(DB_NAME)' => getenv('DB_NAME'),
-            'getenv(DB_USER)' => getenv('DB_USER'),
+            'env(DB_HOST) — ishlatilgan qiymat' => env('DB_HOST', '(bo\'sh, fallback ishlatildi)'),
+            'getenv(DB_HOST) — xom, faqat solishtirish uchun' => getenv('DB_HOST') ?: '(bo\'sh)',
+            '$_ENV[DB_HOST] bormi' => array_key_exists('DB_HOST', $_ENV) ? ('ha: ' . $_ENV['DB_HOST']) : 'yo\'q',
+            '$_SERVER[DB_HOST] bormi' => array_key_exists('DB_HOST', $_SERVER) ? ('ha: ' . $_SERVER['DB_HOST']) : 'yo\'q',
+            'putenv() ishlaydimi' => $this->isPutenvUsable() ? 'ha' : 'YO\'Q — disable_functions\'da o\'chirilgan bo\'lishi mumkin',
             'Yii params db.dsn (haqiqatda ishlatilayotgan)' => Yii::$app->db->dsn ?? '(noma\'lum)',
             '.env fayli mavjudmi' => file_exists(Yii::getAlias('@app/.env')) ? 'ha' : 'yo\'q',
             '.env fayl vaqti (mtime)' => file_exists(Yii::getAlias('@app/.env')) ? date('Y-m-d H:i:s', filemtime(Yii::getAlias('@app/.env'))) : '—',
@@ -74,6 +75,17 @@ class SystemController extends Controller
 {$runOutputHtml}
 </body></html>
 HTML);
+    }
+
+    private function isPutenvUsable(): bool
+    {
+        if (!function_exists('putenv') || !function_exists('getenv')) {
+            return false;
+        }
+
+        putenv('MIGRATE_TEST_PUTENV=1');
+
+        return getenv('MIGRATE_TEST_PUTENV') === '1';
     }
 
     private function checkDbConnection(?string &$error = null): bool
