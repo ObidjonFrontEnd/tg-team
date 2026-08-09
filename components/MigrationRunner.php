@@ -14,8 +14,19 @@ class MigrationRunner
 {
     public static function up(): string
     {
+        return self::run('migrate/up');
+    }
+
+    /** Hali qo'llanilmagan migratsiyalar ro'yxati (bazaga hech narsa yozmaydi, faqat ko'rsatadi). */
+    public static function pending(): string
+    {
+        return self::run('migrate/new');
+    }
+
+    private static function run(string $action): string
+    {
         $yiiScript = Yii::getAlias('@app/yii');
-        $cmd = escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($yiiScript) . ' migrate/up --interactive=0 2>&1';
+        $cmd = escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($yiiScript) . ' ' . $action . ' --interactive=0 2>&1';
 
         $output = shell_exec($cmd);
 
