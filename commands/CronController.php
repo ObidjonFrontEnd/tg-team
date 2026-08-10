@@ -78,7 +78,7 @@ class CronController extends Controller
             ];
         }
 
-        $text = Texts::weeklyReport(count($meetings), $totalPresent, $totalAbsent, $rows);
+        $text = Texts::weeklyReport(count($meetings), $totalPresent, $totalAbsent, $rows, $group->isUmumiy());
 
         Yii::$app->telegram->sendMessage($group->channel_id, $text);
     }

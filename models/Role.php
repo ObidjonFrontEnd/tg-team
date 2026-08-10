@@ -21,6 +21,8 @@ class Role extends ActiveRecord
     public const CODE_TEXNIK_XODIM = 'texnik_xodim';
     public const CODE_TAQDIMOTCHI = 'taqdimotchi';
     public const CODE_ISHTIROKCHI = 'ishtirokchi';
+    /** Ro'yxatdan o'tmagan, botdan foydalanmaydigan mehmon uchun — faqat uchrashuv qo'shilganda beriladi. */
+    public const CODE_MEHMON = 'mehmon';
 
     public static function tableName(): string
     {
@@ -37,11 +39,15 @@ class Role extends ActiveRecord
         return trim(($this->emoji ? $this->emoji . ' ' : '') . $this->name_uz);
     }
 
-    /** Rol tanlash klaviaturasida ko'rsatiladigan rollar — moderator va ishtirokchi avtomatik beriladi, tanlashda kerak emas. @return Role[] */
+    /**
+     * Rol tanlash klaviaturasida ko'rsatiladigan rollar — moderator va ishtirokchi avtomatik beriladi,
+     * mehmon esa faqat «Mehmon qo'shish» orqali beriladi, guruh shablonida tanlanmaydi.
+     * @return Role[]
+     */
     public static function assignable(): array
     {
         return self::find()
-            ->where(['not in', 'code', [self::CODE_MODERATOR, self::CODE_ISHTIROKCHI]])
+            ->where(['not in', 'code', [self::CODE_MODERATOR, self::CODE_ISHTIROKCHI, self::CODE_MEHMON]])
             ->orderBy('id')
             ->all();
     }
@@ -61,6 +67,7 @@ class Role extends ActiveRecord
             self::CODE_TEXNIK_XODIM => 4,
             self::CODE_TAQDIMOTCHI => 5,
             self::CODE_ISHTIROKCHI => 6,
+            self::CODE_MEHMON => 7,
         ];
     }
 

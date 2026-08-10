@@ -22,7 +22,8 @@ http://localhost:8080/site/login
 Login/parol — `.env` dagi `ADMIN_LOGIN` / `ADMIN_PASSWORD`. Kirgandan so'ng yuqori navigatsiya orqali:
 - **Foydalanuvchilar** — barcha ro'yxatdan o'tgan foydalanuvchilar va ular a'zo bo'lgan guruhlar
 - **Guruhlar** — guruh nomi, kanal, moderator, a'zolar soni; guruh nomini yoki a'zolar sonini bosib ichiga kirish mumkin. Shu yerda: **yangi guruh yaratish**, mavjud (ro'yxatdan o'tgan) foydalanuvchini guruhga **qo'shish**, uni **Moderator qilib tayinlash** va guruh **kanalini o'zgartirish** (agar noto'g'ri kiritilgan bo'lsa)
-- **Uchrashuvlar** — barcha uchrashuvlar, holati, yakunlangan bo'lsa — Keldi/Kelmadi soni. Shu yerda: **o'tgan uchrashuvni qo'shish**
+- **Uchrashuvlar** — barcha uchrashuvlar, holati, yakunlangan bo'lsa — Keldi/Kelmadi soni. Shu yerda: **o'tgan uchrashuvni qo'shish**, har bir uchrashuv qatorida **«Rollarni ko'rish/Davomat/Natijalar →»** — kim qanday rol(lar)da ekanini ko'rsatadi (holatidan qat'i nazar — hali boshlanmagan uchrashuvda ham, chunki rollar uchrashuv YARATILGANDA beriladi) va **«✏️ Tahrirlash»**
+- **Davomat** — foydalanuvchi ismini bosib, uning **barcha uchrashuvlar bo'yicha rol va davomat tarixi**ni ko'rish mumkin (guruh, mavzu, sana, rol(lar), holat — hali belgilanmagan bo'lsa ham qatorda ko'rinadi)
 - **Migratsiyalar** — `migrate/up` ni bir tugma bilan ishga tushirish (konsolsiz)
 
 ⚠️ **Guruh yaratish va foydalanuvchini guruhga qo'shish faqat shu boshqaruv panelidan qilinadi** — botning o'zida bunday tugmalar yo'q (mahsulot talabiga ko'ra olib tashlangan). Foydalanuvchi botga `/start` yozib ro'yxatdan o'tadi, so'ng admin uni kerakli guruhga shu paneldan qo'shadi.
@@ -32,7 +33,8 @@ Login/parol — `.env` dagi `ADMIN_LOGIN` / `ADMIN_PASSWORD`. Kirgandan so'ng yu
 Guruh yaratishda «Turi» — **Oddiy** yoki **🌐 Umumiy**. Umumiy guruh:
 - a'zolari **avtomatik** — barcha oddiy guruhlardagi ishtirokchilar yig'iladi (qo'lda qo'shish/o'chirish shart emas, guruhlar o'zgarganda o'zi yangilanadi);
 - botda **faqat shu guruhning Moderatoriga** ko'rinadi — boshqa hech kim (hatto o'sha odamlar Umumiy'ning a'zosi bo'lsa ham) uni o'z «👥 Guruh» ro'yxatida ko'rmaydi;
-- qolgan hamma narsada oddiy guruh kabi ishlaydi — Moderatori uchrashuv yaratishi, davomat belgilashi mumkin, natijalar guruhning o'z kanaliga joylanadi.
+- qolgan hamma narsada oddiy guruh kabi ishlaydi — Moderatori uchrashuv yaratishi, davomat belgilashi mumkin, natijalar guruhning o'z kanaliga joylanadi;
+- botda ham, kanal postlarida ham **«uchrashuv» so'zi «trening»ga almashtiriladi** (tugmalar — «📅 Treninglar»/«➕ Yangi trening», e'lon — «KELGUSI TRENING HAQIDA E'LON!», natijalar — «Trening yakunlari:» va h.k.), chunki Umumiy odatda umumiy trening/yig'inlarni kuzatish uchun ishlatiladi. Faqat E'londa **ishtirokchilar ro'yxati ko'rsatilmaydi** (juda uzun bo'lib ketgani uchun) — lekin trening **tugagandan keyin natijalar (kim keldi/kelmadi) baribir kanalga joylanadi**.
 
 Yaratilgandan keyin admin sifatida shu guruhga kerakli odamni **qo'lda qo'shib**, so'ng uni **Moderator qilib tayinlash** kerak — undan keyin a'zolar ro'yxati avtomatik yuritiladi (Moderatorning o'zi hech qanday oddiy guruhga a'zo bo'lmasa ham, Umumiy'dan chiqarilmaydi).
 
@@ -41,7 +43,9 @@ Yaratilgandan keyin admin sifatida shu guruhga kerakli odamni **qo'lda qo'shib**
 «Uchrashuvlar» sahifasida «+ O'tgan uchrashuvni qo'shish» — guruh, mavzu, sana/vaqt (o'tmishdagi ham bo'lishi mumkin) va formatni kiritib yuboriladi:
 1. Ishtirokchilar va rollar guruh shablonidan avtomatik olinadi (xuddi bot orqali yaratilganda kabi) — kanalga «e'lon» yuborilmaydi, chunki uchrashuv allaqachon bo'lib o'tgan.
 2. Ochilgan «Davomat» sahifasida har bir ishtirokchi uchun Keldi/Kelmadi/Sababli belgilanadi.
-3. «🏁 Yakunlash va natijalarni kanalga joylashtirish» — belgilanmagan ishtirokchilar avtomatik «Kelmadi» bo'ladi, so'ng natijalar (kim keldi/kelmadi va qanday rolda) guruh kanaliga botning odatdagi «Uchrashuv yakunlari» formatida joylanadi. Yakunlangandan keyin davomatni o'zgartirib bo'lmaydi.
+3. «🏁 Yakunlash va natijalarni kanalga joylashtirish» — belgilanmagan ishtirokchilar avtomatik «Kelmadi» bo'ladi, so'ng natijalar (kim keldi/kelmadi va qanday rolda) guruh kanaliga botning odatdagi «Uchrashuv yakunlari» formatida joylanadi. Yakunlangandan keyin ham davomatni tuzatish mumkin — tugma «🔁 Natijalarni qayta joylashtirish»ga aylanadi, bosilganda kanalga to'g'irlangan post qayta ketadi.
+
+Bir xil «Davomat» sahifasida (shu jumladan bot orqali, «✅ Davomat» ekranida ham) **«🎫 Mehmon qo'shish»** — ro'yxatdan o'tmagan, boshqa jamoa/guruhdan yoki umuman botdan foydalanmaydigan odamni faqat F.I.Sh. yozib shu bitta uchrashuvga qo'shish mumkin. Mehmon alohida `is_guest` foydalanuvchi sifatida saqlanadi, «Mehmon» rolida — davomat ro'yxatida va kanaldagi natijalarda boshqalar kabi ko'rinadi, lekin guruhga doimiy a'zo sifatida qo'shib bo'lmaydi.
 
 **Kuzatuvchi (observer):** «Foydalanuvchilar» ro'yxatida har bir odam yonida «🔭 Kuzatuvchi qilish» tugmasi bor (bosilgan zahoti foydalanuvchiga botda yangilangan menyu bilan xabar ketadi — /start kutish shart emas). Kuzatuvchi hech qanday guruhga a'zo bo'lmasa ham, botning asosiy menyusida 4 ta doimiy tugmani ko'radi: 📅 Uchrashuvlar, 👥 Guruh, 🕘 Tarix, 📊 Statistika. Har birini bosganda bot avval «qaysi guruh?» deb so'raydi (ro'yxatda — a'zolikdan qat'i nazar BARCHA guruhlar), so'ng o'sha guruh bo'yicha natijani ko'rsatadi:
 - 📅 Uchrashuvlar — tanlangan guruhning kelayotgan uchrashuvlari
@@ -124,6 +128,10 @@ Amalga oshirilgan (MVP):
 - Haftalik hisobot (konsol buyrug'i + Plesk Rejalashtiruvchisi)
 - Kuzatuvchi roli (guruhga a'zo bo'lmasdan uchrashuvlar/a'zolar/tarix/statistikani ko'rish)
 - Boshqaruv panelidan o'tgan uchrashuvni qo'lda qo'shish va davomatini belgilash (bot ishlamagan payt uchun)
+- «Umumiy» guruh turi — barcha guruhlar ishtirokchilarini avtomatik jamlaydi, faqat o'z Moderatoriga ko'rinadi
+- Boshqaruv panelida kim qaysi uchrashuvda qanday rol(lar)da bo'lgani — uchrashuv bo'yicha ham, foydalanuvchi bo'yicha ham
+- Uchrashuvni tahrirlash va o'chirish (boshqaruv panelidan)
+- Mehmon (ro'yxatdan o'tmagan odam) — bitta uchrashuvga F.I.Sh. bilan qo'shiladi, botda ham, boshqaruv panelida ham
 
 Keyingi bosqich uchun qoldirilgan (MVP'ga kirmaydi, [PLAN.md](./PLAN.md) ga qarang):
 - Uchrashuvdan 1 soat/15 daqiqa oldin avtomatik shaxsiy eslatmalar (tez-tez ishlaydigan cron talab qiladi)

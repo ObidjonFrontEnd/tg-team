@@ -60,9 +60,11 @@ class Texts
         return "Bu amalni faqat guruh Moderatori bajarishi mumkin.";
     }
 
-    public static function askMeetingTopic(): string
+    public static function askMeetingTopic(bool $isTrening = false): string
     {
-        return "Uchrashuv mavzusini kiriting:";
+        $word = $isTrening ? 'Trening' : 'Uchrashuv';
+
+        return "{$word} mavzusini kiriting:";
     }
 
     public static function askMeetingDate(): string
@@ -77,32 +79,42 @@ class Texts
             . "Masalan: 2026-08-10 15:00. Qaytadan kiriting:";
     }
 
-    public static function askMeetingFormat(): string
+    public static function askMeetingFormat(bool $isTrening = false): string
     {
-        return "Uchrashuv formatini tanlang:";
+        $word = $isTrening ? 'Trening' : 'Uchrashuv';
+
+        return "{$word} formatini tanlang:";
     }
 
-    public static function meetingCreated(): string
+    public static function meetingCreated(bool $isTrening = false): string
     {
-        return "✅ Uchrashuv yaratildi va kanalga e'lon qilindi!\n\n"
+        $word = $isTrening ? 'Trening' : 'Uchrashuv';
+
+        return "✅ {$word} yaratildi va kanalga e'lon qilindi!\n\n"
             . "Barcha guruh a'zolari avtomatik qo'shildi, rollar «👥 Guruh a'zolari» bo'limidagi shablon bo'yicha berildi.";
     }
 
-    public static function meetingCreatedButChannelFailed(string $channelId): string
+    public static function meetingCreatedButChannelFailed(string $channelId, bool $isTrening = false): string
     {
-        return "⚠️ Uchrashuv yaratildi, lekin kanalga ({$channelId}) e'lonni yubora olmadik.\n"
+        $word = $isTrening ? 'Trening' : 'Uchrashuv';
+
+        return "⚠️ {$word} yaratildi, lekin kanalga ({$channelId}) e'lonni yubora olmadik.\n"
             . "Bot shu kanalga administrator sifatida (post joylash huquqi bilan) qo'shilganini tekshiring "
             . "yoki boshqaruv panelidan kanal ID'ni to'g'rilang.";
     }
 
-    public static function upcomingMeetingsEmpty(): string
+    public static function upcomingMeetingsEmpty(bool $isTrening = false): string
     {
-        return "Hozircha rejalashtirilgan uchrashuvlar yo'q.";
+        $word = $isTrening ? 'treninglar' : 'uchrashuvlar';
+
+        return "Hozircha rejalashtirilgan {$word} yo'q.";
     }
 
-    public static function upcomingMeetingsHeader(): string
+    public static function upcomingMeetingsHeader(bool $isTrening = false): string
     {
-        return "📅 <b>Yaqinlashib kelayotgan uchrashuvlar:</b>";
+        $word = $isTrening ? 'treninglar' : 'uchrashuvlar';
+
+        return "📅 <b>Yaqinlashib kelayotgan {$word}:</b>";
     }
 
     public static function upcomingMeetingItem(Meeting $meeting, array $myRoles): string
@@ -129,11 +141,26 @@ class Texts
         return $participants;
     }
 
-    /** Post-anons shablon kanal uchun (Модуль 2). */
+    /**
+     * Post-anons shablon kanal uchun (Модуль 2). «Umumiy» guruh uchun ishtirokchilar ro'yxati
+     * ko'rsatilmaydi — u barcha guruhlar a'zolarini jamlagani uchun ro'yxat juda uzun bo'lib ketadi.
+     */
     public static function announcement(Meeting $meeting): string
     {
         $group = $meeting->group;
         $date = self::formatDate($meeting->meeting_at);
+        $word = $group->isUmumiy() ? 'TRENING' : 'UCHRASHUV';
+
+        $header = "📢 <b>KELGUSI {$word} HAQIDA E'LON!</b>\n"
+            . "👥 <b>Guruh:</b> {$group->name}\n"
+            . "📌 <b>Mavzu:</b> «{$meeting->topic}»\n"
+            . "📅 <b>Sana va vaqt:</b> {$date}\n"
+            . "📍 <b>Format:</b> {$meeting->formatLabel()}";
+
+        if ($group->isUmumiy()) {
+            return $header;
+        }
+
         $participants = self::sortByRolePriority($meeting->getParticipantsWithRoles());
 
         $rolesLines = [];
@@ -146,12 +173,8 @@ class Texts
         }
         $rolesText = implode("\n", $rolesLines) ?: '—';
 
-        return "📢 <b>KELGUSI UCHRASHUV HAQIDA E'LON!</b>\n"
-            . "👥 <b>Guruh:</b> {$group->name}\n"
-            . "📌 <b>Mavzu:</b> «{$meeting->topic}»\n"
-            . "📅 <b>Sana va vaqt:</b> {$date}\n"
-            . "📍 <b>Format:</b> {$meeting->formatLabel()}\n\n"
-            . "🎭 <b>Uchrashuvdagi rollar taqsimoti:</b>\n"
+        return "{$header}\n\n"
+            . "👥 <b>Ishtirokchilar ro'yxati:</b>\n"
             . "{$rolesText}";
     }
 
@@ -160,8 +183,9 @@ class Texts
     {
         $group = $meeting->group;
         $date = self::formatDate($meeting->meeting_at);
+        $word = $group->isUmumiy() ? 'TRENING' : 'UCHRASHUV';
 
-        return "❌ <b>UCHRASHUV BEKOR QILINDI!</b>\n"
+        return "❌ <b>{$word} BEKOR QILINDI!</b>\n"
             . "👥 <b>Guruh:</b> {$group->name}\n"
             . "📌 <b>Mavzu:</b> «{$meeting->topic}»\n"
             . "📅 <b>Rejalashtirilgan sana/vaqt:</b> {$date}\n\n"
@@ -187,6 +211,7 @@ class Texts
     public static function meetingResults(Meeting $meeting): string
     {
         $date = self::formatDate($meeting->meeting_at);
+        $word = $meeting->group->isUmumiy() ? 'Trening' : 'Uchrashuv';
         $participants = self::sortByRolePriority($meeting->getParticipantsWithRoles());
         $attendances = $meeting->getAttendances()->indexBy('user_id')->all();
 
@@ -209,7 +234,7 @@ class Texts
             }
         }
 
-        $text = "📢 <b>Uchrashuv yakunlari:</b> «{$meeting->topic}»\n"
+        $text = "📢 <b>{$word} yakunlari:</b> «{$meeting->topic}»\n"
             . "📅 <b>Sana va vaqt:</b> {$date}\n\n"
             . "✅ <b>Ishtirok etganlar:</b>\n" . (implode("\n", $present) ?: '—') . "\n\n"
             . "❌ <b>Kelmaganlar:</b>\n" . (implode("\n", $absent) ?: '—');
@@ -218,15 +243,16 @@ class Texts
     }
 
     /** Haftalik hisobot — kanalga post (Модуль 5). */
-    public static function weeklyReport(int $meetingsCount, int $totalPresent, int $totalAbsent, array $perUser): string
+    public static function weeklyReport(int $meetingsCount, int $totalPresent, int $totalAbsent, array $perUser, bool $isTrening = false): string
     {
+        $word = $isTrening ? 'treninglar' : 'uchrashuvlar';
         $lines = [];
         foreach ($perUser as $row) {
             $lines[] = "• {$row['full_name']}: ✅ {$row['present']} keldi / ❌ {$row['absent']} kelmadi";
         }
 
         return "📊 <b>Haftalik davomat hisoboti:</b>\n"
-            . "🔹 <b>Haftadagi jami uchrashuvlar:</b> {$meetingsCount}\n"
+            . "🔹 <b>Haftadagi jami {$word}:</b> {$meetingsCount}\n"
             . "✅ <b>Jami tashriflar (Keldi):</b> {$totalPresent} marta\n"
             . "❌ <b>Jami sabablar (Kelmadi):</b> {$totalAbsent} marta\n\n"
             . "📈 <b>Ishtirokchilar bo'yicha tafsilot:</b>\n"

@@ -70,23 +70,27 @@ class AdminController extends Controller
                 . "<input type=\"hidden\" name=\"user_id\" value=\"{$u->id}\">"
                 . '<button type="submit" style="font-size:12px;padding:3px 10px;border:1px solid #c0392b;background:#fff;color:#c0392b;border-radius:10px;cursor:pointer;">🗑 O\'chirish</button>'
                 . '</form>';
+            $nameHtml = htmlspecialchars($u->full_name)
+                . ($u->is_guest ? ' <span style="background:#8d6e63;color:#fff;padding:1px 6px;border-radius:8px;font-size:11px;">🎫 Mehmon</span>' : '');
+            $rowAction = $u->is_guest ? $editBtn . ' ' . $deleteBtn : $editBtn . ' ' . $observerBtn . ' ' . $deleteBtn;
+
             $rows .= '<tr>'
                 . '<td>' . $u->id . '</td>'
-                . '<td>' . htmlspecialchars($u->full_name) . '</td>'
+                . '<td>' . $nameHtml . '</td>'
                 . '<td>' . htmlspecialchars((string) $u->position) . '</td>'
                 . '<td>' . htmlspecialchars((string) $u->phone) . '</td>'
-                . '<td>' . $u->telegram_id . '</td>'
+                . '<td>' . ($u->telegram_id ?? '—') . '</td>'
                 . '<td>' . htmlspecialchars((string) $u->telegram_username) . '</td>'
                 . '<td>' . htmlspecialchars($groupNames) . '</td>'
                 . '<td>' . htmlspecialchars((string) $u->created_at) . '</td>'
-                . '<td style="white-space:nowrap;">' . $editBtn . ' ' . $observerBtn . ' ' . $deleteBtn . '</td>'
+                . '<td style="white-space:nowrap;">' . $rowAction . '</td>'
                 . '</tr>';
         }
 
         $body = $this->table(
             ['ID', 'F.I.Sh.', 'Lavozim', 'Telefon', 'Telegram ID', 'Username', 'Guruhlar', 'Ro\'yxatdan o\'tgan', ''],
             $rows,
-            "Jami: " . count($users) . ' <span style="color:#aaa;">(🔭 Kuzatuvchi — hech qanday guruhga a\'zo bo\'lmasdan barcha guruhlar statistikasini ko\'ra oladi)</span>'
+            "Jami: " . count($users) . ' <span style="color:#aaa;">(🔭 Kuzatuvchi — hech qanday guruhga a\'zo bo\'lmasdan barcha guruhlar statistikasini ko\'ra oladi; 🎫 Mehmon — ro\'yxatdan o\'tmagan, faqat bitta uchrashuvga qo\'shilgan odam)</span>'
         );
 
         return $this->page('Foydalanuvchilar', 'users', $body);
@@ -488,7 +492,11 @@ HTML;
             "Jami a'zolar: " . count($members)
         );
 
-        $candidates = User::find()->andWhere($memberIds ? ['not in', 'id', $memberIds] : '1=1')->orderBy(['full_name' => SORT_ASC])->all();
+        $candidates = User::find()
+            ->andWhere($memberIds ? ['not in', 'id', $memberIds] : '1=1')
+            ->andWhere(['is_guest' => false])
+            ->orderBy(['full_name' => SORT_ASC])
+            ->all();
         $options = '';
         foreach ($candidates as $c) {
             $options .= '<option value="' . $c->id . '">' . htmlspecialchars($c->full_name) . ' (' . htmlspecialchars((string) $c->position) . ')</option>';
@@ -551,20 +559,30 @@ HTML;
             Meeting::STATUS_CANCELLED => 'Bekor qilingan',
         ];
 
+        $deleteMeetingUrl = Url::to(['admin/meeting-delete']);
+
         $rows = '';
         foreach ($meetings as $m) {
             $presentCount = $m->getAttendances()->andWhere(['status' => 'present'])->count();
             $absentCount = $m->getAttendances()->andWhere(['status' => ['absent', 'excused']])->count();
             $attendanceText = $m->isFinished() ? "✅ {$presentCount} / ❌ {$absentCount}" : '—';
 
-            $action = '';
-            if (in_array($m->status, [Meeting::STATUS_ATTENDANCE_MARKING, Meeting::STATUS_FINISHED], true)) {
-                $attendanceUrl = Url::to(['admin/meeting-attendance', 'id' => $m->id]);
-                $label = $m->isFinished() ? 'Natijalar' : 'Davomat';
-                $action .= '<a href="' . $attendanceUrl . '" style="color:#2c3e50;margin-right:10px;">' . $label . ' →</a>';
-            }
+            $attendanceUrl = Url::to(['admin/meeting-attendance', 'id' => $m->id]);
+            $attendanceLabel = match (true) {
+                $m->isFinished() => 'Natijalar/rollar',
+                $m->status === Meeting::STATUS_ATTENDANCE_MARKING => 'Davomat/rollar',
+                default => 'Rollarni ko\'rish',
+            };
+            $action = '<a href="' . $attendanceUrl . '" style="color:#2c3e50;margin-right:10px;">' . $attendanceLabel . ' →</a>';
+
             $editUrl = Url::to(['admin/meeting-edit', 'id' => $m->id]);
-            $action .= '<a href="' . $editUrl . '" style="color:#2c3e50;">✏️ Tahrirlash</a>';
+            $action .= '<a href="' . $editUrl . '" style="color:#2c3e50;margin-right:10px;">✏️ Tahrirlash</a>';
+
+            $topicEscJs = htmlspecialchars($m->topic, ENT_QUOTES);
+            $action .= "<form method=\"post\" action=\"{$deleteMeetingUrl}\" style=\"display:inline;\" onsubmit=\"return confirm('«{$topicEscJs}» uchrashuvini butunlay o\\'chirmoqchimisiz? Davomat va rollar ham o\\'chadi, bu amalni ortga qaytarib bo\\'lmaydi.');\">"
+                . "<input type=\"hidden\" name=\"meeting_id\" value=\"{$m->id}\">"
+                . '<button type="submit" style="font-size:13px;padding:0;border:none;background:none;color:#c0392b;cursor:pointer;">🗑 O\'chirish</button>'
+                . '</form>';
 
             $rows .= '<tr>'
                 . '<td>' . $m->id . '</td>'
@@ -690,6 +708,25 @@ HTML
         return $this->redirect(['admin/meeting-attendance', 'id' => $meeting->id]);
     }
 
+    public function actionMeetingDelete(): Response
+    {
+        if (Yii::$app->request->isPost) {
+            $meeting = Meeting::findOne((int) Yii::$app->request->post('meeting_id'));
+            if ($meeting !== null) {
+                $topic = $meeting->topic;
+                try {
+                    $meeting->delete();
+                    Yii::$app->session->setFlash('success', "«{$topic}» uchrashuvi (davomat va rollari bilan) o'chirildi.");
+                } catch (\Throwable $e) {
+                    Yii::error('Meeting delete failed: ' . $e->getMessage());
+                    Yii::$app->session->setFlash('error', "Uchrashuvni o'chirib bo'lmadi: " . $e->getMessage());
+                }
+            }
+        }
+
+        return $this->redirect(['admin/meetings']);
+    }
+
     /** Uchrashuv ma'lumotlarini tahrirlash — mavzu, sana/vaqt, format (guruh o'zgartirilmaydi, chunki rollar guruhga bog'liq). */
     public function actionMeetingEdit(int $id): Response
     {
@@ -813,6 +850,17 @@ HTML;
 
         $table = $this->table(['F.I.Sh.', 'Rollar', 'Davomat'], $rows, "Jami ishtirokchilar: " . count($participants));
 
+        $addGuestUrl = Url::to(['admin/meeting-add-guest']);
+        $guestForm = <<<HTML
+<form method="post" action="{$addGuestUrl}" style="margin:16px 0;background:#fff;padding:14px 18px;border-radius:6px;max-width:480px;">
+<input type="hidden" name="meeting_id" value="{$meeting->id}">
+<label>🎫 Mehmon qo'shish (ro'yxatdan o'tmagan, boshqa jamoa/guruhdan bo'lishi mumkin)<br>
+<input type="text" name="full_name" placeholder="F.I.Sh." required style="width:100%;padding:8px;margin-top:6px;box-sizing:border-box;">
+</label>
+<button type="submit" style="margin-top:10px;padding:8px 18px;background:#2c3e50;color:#fff;border:none;border-radius:4px;cursor:pointer;">Qo'shish</button>
+</form>
+HTML;
+
         $infoHtml = '<p><a href="' . Url::to(['admin/meetings']) . '" style="color:#2c3e50;">← Uchrashuvlar ro\'yxatiga qaytish</a></p>'
             . '<div style="background:#fff;padding:14px 18px;border-radius:6px;margin-bottom:16px;">'
             . '<p style="margin:0 0 6px;"><b>Guruh:</b> ' . htmlspecialchars($group->name ?? '—') . '</p>'
@@ -833,7 +881,35 @@ HTML;
 <p style="color:#888;font-size:13px;margin-top:8px;">{$publishNote}</p>
 HTML;
 
-        return $this->page("«{$meeting->topic}» — davomat", 'meetings', $infoHtml . $table . $publishHtml);
+        return $this->page("«{$meeting->topic}» — davomat", 'meetings', $infoHtml . $table . $guestForm . $publishHtml);
+    }
+
+    public function actionMeetingAddGuest(): Response
+    {
+        if (Yii::$app->request->isPost) {
+            $meeting = Meeting::findOne((int) Yii::$app->request->post('meeting_id'));
+            if ($meeting === null) {
+                return $this->redirect(['admin/meetings']);
+            }
+
+            $fullName = trim((string) Yii::$app->request->post('full_name'));
+            if ($fullName !== '') {
+                $mehmonRoleId = Role::find()->where(['code' => Role::CODE_MEHMON])->select('id')->scalar();
+                if ($mehmonRoleId) {
+                    $guest = User::createGuest($fullName);
+                    (new MeetingUserRole([
+                        'meeting_id' => $meeting->id,
+                        'user_id' => $guest->id,
+                        'role_id' => (int) $mehmonRoleId,
+                    ]))->save(false);
+                    Yii::$app->session->setFlash('success', "🎫 «{$fullName}» mehmon sifatida qo'shildi. Endi davomatini belgilang.");
+                }
+            }
+
+            return $this->redirect(['admin/meeting-attendance', 'id' => $meeting->id]);
+        }
+
+        return $this->redirect(['admin/meetings']);
     }
 
     public function actionMeetingSetAttendance(): Response
@@ -936,7 +1012,11 @@ HTML;
         return $this->page('Davomat', 'attendance', $body);
     }
 
-    /** Bitta foydalanuvchining barcha uchrashuvlardagi davomati — sanasi bilan. */
+    /**
+     * Bitta foydalanuvchining barcha uchrashuvlardagi tarixi — har bir uchrashuvda qanday rol(lar)da
+     * bo'lgani va davomati. Asos — MeetingUserRole (rol uchrashuv YARATILGANDA beriladi), shuning uchun
+     * hali davomati belgilanmagan (yoki hali boshlanmagan) uchrashuvlar ham ro'yxatda ko'rinadi.
+     */
     public function actionAttendanceUser(int $id): Response
     {
         $user = User::findOne($id);
@@ -944,12 +1024,27 @@ HTML;
             return $this->page('Foydalanuvchi topilmadi', 'attendance', '<p>Bunday foydalanuvchi topilmadi. <a href="' . Url::to(['admin/attendance']) . '">Orqaga</a></p>');
         }
 
-        $attendances = Attendance::find()
+        $roleRows = MeetingUserRole::find()
             ->where(['user_id' => $id])
-            ->with(['meeting', 'meeting.group', 'markedByUser'])
+            ->with(['meeting', 'meeting.group', 'role'])
             ->all();
 
-        usort($attendances, fn (Attendance $a, Attendance $b) => strcmp($b->meeting->meeting_at ?? '', $a->meeting->meeting_at ?? ''));
+        $meetingRoles = [];
+        foreach ($roleRows as $mur) {
+            if ($mur->meeting === null) {
+                continue;
+            }
+            $meetingRoles[$mur->meeting_id]['meeting'] ??= $mur->meeting;
+            $meetingRoles[$mur->meeting_id]['roles'][] = $mur->role;
+        }
+
+        $attendances = Attendance::find()
+            ->where(['user_id' => $id, 'meeting_id' => array_keys($meetingRoles)])
+            ->with('markedByUser')
+            ->indexBy('meeting_id')
+            ->all();
+
+        uasort($meetingRoles, fn ($a, $b) => strcmp($b['meeting']->meeting_at ?? '', $a['meeting']->meeting_at ?? ''));
 
         $statusLabels = [
             Attendance::STATUS_PRESENT => '<span style="color:#1e8449;">✅ Keldi</span>',
@@ -960,35 +1055,45 @@ HTML;
         $rows = '';
         $present = 0;
         $absent = 0;
-        foreach ($attendances as $a) {
-            $meeting = $a->meeting;
-            if ($meeting === null) {
-                continue;
+        foreach ($meetingRoles as $meetingId => $row) {
+            $meeting = $row['meeting'];
+            $roleNames = Role::namesOnly($row['roles']);
+            $a = $attendances[$meetingId] ?? null;
+
+            $statusHtml = '<span style="color:#888;">— belgilanmagan</span>';
+            $markedAt = '—';
+            $markedBy = '—';
+            if ($a !== null) {
+                $statusHtml = $statusLabels[$a->status] ?? htmlspecialchars($a->status);
+                $markedAt = htmlspecialchars((string) $a->marked_at);
+                $markedBy = htmlspecialchars($a->markedByUser->full_name ?? '—');
+                if ($a->status === Attendance::STATUS_PRESENT) {
+                    $present++;
+                } else {
+                    $absent++;
+                }
             }
-            if ($a->status === Attendance::STATUS_PRESENT) {
-                $present++;
-            } else {
-                $absent++;
-            }
+
             $rows .= '<tr>'
                 . '<td>' . htmlspecialchars($meeting->group->name ?? '—') . '</td>'
                 . '<td>' . htmlspecialchars($meeting->topic) . '</td>'
                 . '<td>' . htmlspecialchars($meeting->meeting_at) . '</td>'
-                . '<td>' . ($statusLabels[$a->status] ?? htmlspecialchars($a->status)) . '</td>'
-                . '<td>' . htmlspecialchars((string) $a->marked_at) . '</td>'
-                . '<td>' . htmlspecialchars($a->markedByUser->full_name ?? '—') . '</td>'
+                . '<td>' . htmlspecialchars($roleNames) . '</td>'
+                . '<td>' . $statusHtml . '</td>'
+                . '<td>' . $markedAt . '</td>'
+                . '<td>' . $markedBy . '</td>'
                 . '</tr>';
         }
 
         $table = $this->table(
-            ['Guruh', 'Uchrashuv', 'Sana/vaqt', 'Holat', 'Belgilangan vaqt', 'Kim belgiladi'],
+            ['Guruh', 'Uchrashuv', 'Sana/vaqt', 'Rol(lar)', 'Holat', 'Belgilangan vaqt', 'Kim belgiladi'],
             $rows,
-            "Jami: {$present} keldi, {$absent} kelmadi/sababli"
+            "Jami: " . count($meetingRoles) . " ta uchrashuvda ishtirok etgan/ishtirok etishi kerak — {$present} keldi, {$absent} kelmadi/sababli"
         );
 
         $info = '<p><a href="' . Url::to(['admin/attendance']) . '" style="color:#2c3e50;">← Davomat ro\'yxatiga qaytish</a></p>';
 
-        return $this->page("«{$user->full_name}» davomati", 'attendance', $info . $table);
+        return $this->page("«{$user->full_name}» — uchrashuvlar va rollar tarixi", 'attendance', $info . $table);
     }
 
     public function actionMigrate(): Response
