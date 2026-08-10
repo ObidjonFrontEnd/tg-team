@@ -125,6 +125,17 @@ class TelegramApi extends Component
         return $this->call('getWebhookInfo');
     }
 
+    /** @param array<int, array{command:string, description:string}> $commands */
+    public function setMyCommands(array $commands): array
+    {
+        return $this->call('setMyCommands', ['commands' => $commands]);
+    }
+
+    public function getMyCommands(): array
+    {
+        return $this->call('getMyCommands');
+    }
+
     public function getChatMember(int|string $chatId, int $userId): array
     {
         return $this->call('getChatMember', ['chat_id' => $chatId, 'user_id' => $userId]);

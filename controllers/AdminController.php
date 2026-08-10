@@ -658,7 +658,54 @@ HTML;
 </div>
 HTML;
 
-        return $this->page('Webhook', 'webhook', $form);
+        $commandsHtml = $this->commandsSection();
+
+        return $this->page('Webhook', 'webhook', $form . $commandsHtml);
+    }
+
+    /** Telegram'dagi «/» buyruqlar menyusi (chat oynasida taklif qilinadigan buyruqlar ro'yxati). */
+    private function commandsSection(): string
+    {
+        $current = Yii::$app->telegram->getMyCommands();
+        $commands = $current['result'] ?? [];
+
+        $currentRows = '';
+        foreach ($commands as $c) {
+            $currentRows .= '<tr><td style="padding:6px 10px;color:#666;">/' . htmlspecialchars((string) ($c['command'] ?? ''))
+                . '</td><td style="padding:6px 10px;">' . htmlspecialchars((string) ($c['description'] ?? '')) . '</td></tr>';
+        }
+        $currentTable = $currentRows
+            ? '<table style="border-collapse:collapse;">' . $currentRows . '</table>'
+            : '<p style="color:#888;">Hali birorta buyruq ro\'yxatga olinmagan.</p>';
+
+        $setCommandsUrl = Url::to(['admin/commands-set']);
+
+        return <<<HTML
+<div style="background:#fff;padding:14px 18px;border-radius:6px;max-width:640px;margin-top:20px;">
+<h3 style="margin-top:0;">Buyruqlar menyusi («/» tugmasi)</h3>
+{$currentTable}
+<form method="post" action="{$setCommandsUrl}" style="margin-top:14px;">
+<button type="submit" style="padding:10px 20px;background:#2c3e50;color:#fff;border:none;border-radius:4px;cursor:pointer;">/start ni ro'yxatga olish</button>
+</form>
+</div>
+HTML;
+    }
+
+    public function actionCommandsSet(): Response
+    {
+        if (Yii::$app->request->isPost) {
+            $result = Yii::$app->telegram->setMyCommands([
+                ['command' => 'start', 'description' => "Botni ishga tushirish / ro'yxatdan o'tish"],
+            ]);
+            Yii::$app->session->setFlash(
+                !empty($result['ok']) ? 'success' : 'error',
+                !empty($result['ok'])
+                    ? "Buyruqlar menyusi yangilandi."
+                    : 'Xatolik: ' . htmlspecialchars((string) ($result['description'] ?? 'noma\'lum xatolik'))
+            );
+        }
+
+        return $this->redirect(['admin/webhook']);
     }
 
     public function actionWebhookSet(): Response
