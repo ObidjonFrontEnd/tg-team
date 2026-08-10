@@ -27,7 +27,7 @@ Login/parol — `.env` dagi `ADMIN_LOGIN` / `ADMIN_PASSWORD`. Kirgandan so'ng yu
 
 ⚠️ **Guruh yaratish va foydalanuvchini guruhga qo'shish faqat shu boshqaruv panelidan qilinadi** — botning o'zida bunday tugmalar yo'q (mahsulot talabiga ko'ra olib tashlangan). Foydalanuvchi botga `/start` yozib ro'yxatdan o'tadi, so'ng admin uni kerakli guruhga shu paneldan qo'shadi.
 
-**Kuzatuvchi (observer):** «Foydalanuvchilar» ro'yxatida har bir odam yonida «🔭 Kuzatuvchi qilish» tugmasi bor. Kuzatuvchi — hech qanday guruhga a'zo bo'lmasdan turib botda «📊 Statistika» tugmasini ko'radi, undan istalgan guruhni tanlab, o'sha guruh a'zolarining davomat statistikasini (kim nechta uchrashuvga keldi/kelmadi) ko'rishi mumkin. Bir nechta odam bir vaqtda Kuzatuvchi bo'lishi mumkin.
+**Kuzatuvchi (observer):** «Foydalanuvchilar» ro'yxatida har bir odam yonida «🔭 Kuzatuvchi qilish» tugmasi bor (bosilgan zahoti foydalanuvchiga botda yangilangan menyu bilan xabar ketadi — /start kutish shart emas). Kuzatuvchi — hech qanday guruhga a'zo bo'lmasdan turib botda «👁 Kuzatuv» tugmasini ko'radi: undan istalgan guruhni tanlaydi, so'ng o'sha guruh bo'yicha — 📅 kelayotgan uchrashuvlar, 🕘 o'tgan uchrashuvlar tarixi (har biri natijasi bilan), 👥 a'zolar ro'yxati (rollari bilan, kontaktisiz) yoki 📊 davomat statistikasi (kim nechta marta keldi/kelmadi) — birini ko'rishi mumkin. Bir nechta odam bir vaqtda Kuzatuvchi bo'lishi mumkin.
 
 ### Bot menyusi — rolga qarab farq qiladi
 

@@ -289,6 +289,14 @@ HTML;
             if ($user !== null) {
                 $user->is_observer = !$user->is_observer;
                 $user->save(false);
+
+                (new BotHandler(Yii::$app->telegram))->notifyUserMenu(
+                    $user,
+                    $user->is_observer
+                        ? "👁 Sizga «Kuzatuvchi» roli berildi. Endi «👁 Kuzatuv» tugmasi orqali istalgan guruhning uchrashuvlari, a'zolari va davomat statistikasini ko'rishingiz mumkin. Yangi menyu:"
+                        : "ℹ️ Sizning «Kuzatuvchi» rolingiz olib tashlandi. Yangi menyu:"
+                );
+
                 Yii::$app->session->setFlash(
                     'success',
                     $user->is_observer

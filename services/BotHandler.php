@@ -29,7 +29,7 @@ class BotHandler
     private const BTN_MARK_ATTENDANCE = '✅ Davomat';
     private const BTN_GROUP_MEMBERS = '👥 Guruh';
     private const BTN_SWITCH_GROUP = '🔀 Guruhni almashtirish';
-    private const BTN_STATS = '📊 Statistika';
+    private const BTN_OBSERVE = '👁 Kuzatuv';
 
     /** Regламент: uchrashuv kamida shuncha soat oldin e'lon qilinishi kerak. */
     private const MIN_ADVANCE_HOURS = 12;
@@ -137,7 +137,7 @@ class BotHandler
         }
 
         if ($user->is_observer) {
-            $rows[] = [self::BTN_STATS];
+            $rows[] = [self::BTN_OBSERVE];
         }
 
         return $rows;
@@ -341,7 +341,7 @@ class BotHandler
                 $this->showGroupSwitcher($chatId, $user);
                 break;
 
-            case self::BTN_STATS:
+            case self::BTN_OBSERVE:
                 $this->showObserverGroupList($chatId, $user);
                 break;
 
@@ -488,6 +488,16 @@ class BotHandler
         $this->api->sendMessage($user->telegram_id, $text, null, $this->mainMenuKeyboard($user, $group));
     }
 
+    /**
+     * notifyMenuRefresh'dan farqi — aniq bitta guruhga bog'liq emas (masalan, Kuzatuvchi
+     * roli berilganda/olib tashlanganda, u guruh a'zosi bo'lmasligi mumkin). Foydalanuvchining
+     * joriy (yoki yo'q) guruhini o'zi aniqlab, mos menyuni yuboradi.
+     */
+    public function notifyUserMenu(User $user, string $text): void
+    {
+        $this->api->sendMessage($user->telegram_id, $text, null, $this->mainMenuKeyboard($user, $this->currentGroup($user)));
+    }
+
     private function openMemberRoleScreen(int $chatId, User $user, int $groupId, int $memberId): void
     {
         $group = Group::findOne($groupId);
@@ -525,8 +535,9 @@ class BotHandler
     // ---------------------------------------------------------- observer
 
     /**
-     * Kuzatuvchi hech qanday guruhga a'zo emas, shuning uchun barcha guruhlar ro'yxatidan
-     * birini tanlab, o'sha guruhning davomat statistikasini ko'radi.
+     * Kuzatuvchi hech qanday guruhga a'zo emas, shuning uchun avval barcha guruhlar
+     * ro'yxatidan birini tanlaydi, so'ng o'sha guruh bo'yicha nimani ko'rishni tanlaydi
+     * (uchrashuvlar, tarix, a'zolar, statistika).
      */
     private function showObserverGroupList(int $chatId, User $user): void
     {
@@ -546,7 +557,127 @@ class BotHandler
             $rows[] = [['text' => $group->name, 'callback_data' => "ogr:{$group->id}"]];
         }
 
-        $this->api->sendMessage($chatId, "📊 Statistikasini ko'rmoqchi bo'lgan guruhni tanlang:", $rows);
+        $this->api->sendMessage($chatId, "👁 Qaysi guruhni ko'rmoqchisiz?", $rows);
+    }
+
+    private function showObserverGroupMenu(int $chatId, User $user, int $groupId): void
+    {
+        if (!$user->is_observer) {
+            return;
+        }
+
+        $group = Group::findOne($groupId);
+        if ($group === null) {
+            return;
+        }
+
+        $this->api->sendMessage($chatId, "👁 <b>{$group->name}</b>\n\nNimani ko'rmoqchisiz?", [
+            [['text' => "📅 Yaqinlashib kelayotgan uchrashuvlar", 'callback_data' => "oum:{$groupId}"]],
+            [['text' => "🕘 O'tgan uchrashuvlar (tarix)", 'callback_data' => "ohm:{$groupId}"]],
+            [['text' => "👥 Guruh a'zolari", 'callback_data' => "ogm:{$groupId}"]],
+            [['text' => "📊 Davomat statistikasi", 'callback_data' => "ogs:{$groupId}"]],
+            [['text' => "⬅️ Guruhlar ro'yxati", 'callback_data' => 'ogl']],
+        ]);
+    }
+
+    private function observerBackKeyboard(int $groupId): array
+    {
+        return [[['text' => '⬅️ Orqaga', 'callback_data' => "ogr:{$groupId}"]]];
+    }
+
+    /** Faqat guruhning kelayotgan (hali yakunlanmagan) uchrashuvlari — ko'rish uchun, harakat tugmalarisiz. */
+    private function showObserverUpcomingMeetings(int $chatId, User $user, int $groupId): void
+    {
+        if (!$user->is_observer) {
+            return;
+        }
+
+        $group = Group::findOne($groupId);
+        if ($group === null) {
+            return;
+        }
+
+        $meetings = $this->activeMeetings($group);
+        if (!$meetings) {
+            $this->api->sendMessage($chatId, Texts::upcomingMeetingsEmpty(), $this->observerBackKeyboard($groupId));
+
+            return;
+        }
+
+        $text = "📅 <b>{$group->name} — yaqinlashib kelayotgan uchrashuvlar:</b>\n\n";
+        foreach ($meetings as $meeting) {
+            $text .= "📌 «{$meeting->topic}»\n"
+                . "🗓 " . Texts::formatDate($meeting->meeting_at) . " · {$meeting->formatLabel()}\n"
+                . "📊 Holat: " . $this->meetingStatusLabel($meeting->status) . "\n\n";
+        }
+
+        $this->api->sendMessage($chatId, rtrim($text), $this->observerBackKeyboard($groupId));
+    }
+
+    /** Yakunlangan uchrashuvlar tarixi — har biri uchun kelgan/kelmagan soni bilan. */
+    private function showObserverMeetingHistory(int $chatId, User $user, int $groupId): void
+    {
+        if (!$user->is_observer) {
+            return;
+        }
+
+        $group = Group::findOne($groupId);
+        if ($group === null) {
+            return;
+        }
+
+        $meetings = $group->getMeetings()
+            ->andWhere(['status' => Meeting::STATUS_FINISHED])
+            ->orderBy(['meeting_at' => SORT_DESC])
+            ->limit(20)
+            ->all();
+
+        if (!$meetings) {
+            $this->api->sendMessage($chatId, "«{$group->name}» guruhida hali yakunlangan uchrashuvlar yo'q.", $this->observerBackKeyboard($groupId));
+
+            return;
+        }
+
+        $text = "🕘 <b>{$group->name} — o'tgan uchrashuvlar:</b>\n\n";
+        foreach ($meetings as $meeting) {
+            $present = $meeting->getAttendances()->andWhere(['status' => Attendance::STATUS_PRESENT])->count();
+            $absent = $meeting->getAttendances()->andWhere(['status' => [Attendance::STATUS_ABSENT, Attendance::STATUS_EXCUSED]])->count();
+            $text .= "📌 «{$meeting->topic}» — " . Texts::formatDate($meeting->meeting_at) . "\n"
+                . "✅ {$present} keldi / ❌ {$absent} kelmadi\n\n";
+        }
+
+        $this->api->sendMessage($chatId, rtrim($text), $this->observerBackKeyboard($groupId));
+    }
+
+    /** Guruh a'zolari — faqat ism va rollar (kontakt/telefon ko'rsatilmaydi, chunki kuzatuvchi guruh a'zosi emas). */
+    private function showObserverGroupMembers(int $chatId, User $user, int $groupId): void
+    {
+        if (!$user->is_observer) {
+            return;
+        }
+
+        $group = Group::findOne($groupId);
+        if ($group === null) {
+            return;
+        }
+
+        $members = $group->getMembers()->all();
+        if (!$members) {
+            $this->api->sendMessage($chatId, "«{$group->name}» guruhida hali a'zolar yo'q.", $this->observerBackKeyboard($groupId));
+
+            return;
+        }
+
+        usort($members, fn (User $a, User $b) => $this->memberPriority($group, $a) <=> $this->memberPriority($group, $b));
+
+        $lines = [];
+        foreach ($members as $member) {
+            $lines[] = '• ' . Role::formatPerson($member->full_name, $this->memberRoles($group, $member));
+        }
+
+        $text = "👥 <b>{$group->name} — a'zolar:</b>\n\n" . implode("\n", $lines);
+
+        $this->api->sendMessage($chatId, $text, $this->observerBackKeyboard($groupId));
     }
 
     /** Guruh a'zolari bo'yicha: kim nechta uchrashuvga keldi, kim nechta marta kelmadi. */
@@ -563,7 +694,7 @@ class BotHandler
 
         $members = $group->getMembers()->orderBy(['full_name' => SORT_ASC])->all();
         if (!$members) {
-            $this->api->sendMessage($chatId, "«{$group->name}» guruhida hali a'zolar yo'q.");
+            $this->api->sendMessage($chatId, "«{$group->name}» guruhida hali a'zolar yo'q.", $this->observerBackKeyboard($groupId));
 
             return;
         }
@@ -596,7 +727,7 @@ class BotHandler
 
         $text = "📊 <b>{$group->name} — davomat statistikasi</b>\n\n" . implode("\n", $lines);
 
-        $this->api->sendMessage($chatId, $text, [[['text' => '⬅️ Guruhlar ro\'yxati', 'callback_data' => 'ogl']]]);
+        $this->api->sendMessage($chatId, $text, $this->observerBackKeyboard($groupId));
     }
 
     // ------------------------------------------------------------ meetings
@@ -1344,6 +1475,30 @@ class BotHandler
         }
 
         if (str_starts_with($data, 'ogr:')) {
+            $this->showObserverGroupMenu($chatId, $user, (int) substr($data, 4));
+
+            return;
+        }
+
+        if (str_starts_with($data, 'oum:')) {
+            $this->showObserverUpcomingMeetings($chatId, $user, (int) substr($data, 4));
+
+            return;
+        }
+
+        if (str_starts_with($data, 'ohm:')) {
+            $this->showObserverMeetingHistory($chatId, $user, (int) substr($data, 4));
+
+            return;
+        }
+
+        if (str_starts_with($data, 'ogm:')) {
+            $this->showObserverGroupMembers($chatId, $user, (int) substr($data, 4));
+
+            return;
+        }
+
+        if (str_starts_with($data, 'ogs:')) {
             $this->showGroupAttendanceStats($chatId, $user, (int) substr($data, 4));
 
             return;
