@@ -22,10 +22,17 @@ http://localhost:8080/site/login
 Login/parol — `.env` dagi `ADMIN_LOGIN` / `ADMIN_PASSWORD`. Kirgandan so'ng yuqori navigatsiya orqali:
 - **Foydalanuvchilar** — barcha ro'yxatdan o'tgan foydalanuvchilar va ular a'zo bo'lgan guruhlar
 - **Guruhlar** — guruh nomi, kanal, moderator, a'zolar soni; guruh nomini yoki a'zolar sonini bosib ichiga kirish mumkin. Shu yerda: **yangi guruh yaratish**, mavjud (ro'yxatdan o'tgan) foydalanuvchini guruhga **qo'shish**, uni **Moderator qilib tayinlash** va guruh **kanalini o'zgartirish** (agar noto'g'ri kiritilgan bo'lsa)
-- **Uchrashuvlar** — barcha uchrashuvlar, holati, yakunlangan bo'lsa — Keldi/Kelmadi soni
+- **Uchrashuvlar** — barcha uchrashuvlar, holati, yakunlangan bo'lsa — Keldi/Kelmadi soni. Shu yerda: **o'tgan uchrashuvni qo'shish**
 - **Migratsiyalar** — `migrate/up` ni bir tugma bilan ishga tushirish (konsolsiz)
 
 ⚠️ **Guruh yaratish va foydalanuvchini guruhga qo'shish faqat shu boshqaruv panelidan qilinadi** — botning o'zida bunday tugmalar yo'q (mahsulot talabiga ko'ra olib tashlangan). Foydalanuvchi botga `/start` yozib ro'yxatdan o'tadi, so'ng admin uni kerakli guruhga shu paneldan qo'shadi.
+
+### O'tgan uchrashuvni qo'lda qo'shish (bot ishlamagan payt bo'lib o'tgan uchrashuvlar uchun)
+
+«Uchrashuvlar» sahifasida «+ O'tgan uchrashuvni qo'shish» — guruh, mavzu, sana/vaqt (o'tmishdagi ham bo'lishi mumkin) va formatni kiritib yuboriladi:
+1. Ishtirokchilar va rollar guruh shablonidan avtomatik olinadi (xuddi bot orqali yaratilganda kabi) — kanalga «e'lon» yuborilmaydi, chunki uchrashuv allaqachon bo'lib o'tgan.
+2. Ochilgan «Davomat» sahifasida har bir ishtirokchi uchun Keldi/Kelmadi/Sababli belgilanadi.
+3. «🏁 Yakunlash va natijalarni kanalga joylashtirish» — belgilanmagan ishtirokchilar avtomatik «Kelmadi» bo'ladi, so'ng natijalar (kim keldi/kelmadi va qanday rolda) guruh kanaliga botning odatdagi «Uchrashuv yakunlari» formatida joylanadi. Yakunlangandan keyin davomatni o'zgartirib bo'lmaydi.
 
 **Kuzatuvchi (observer):** «Foydalanuvchilar» ro'yxatida har bir odam yonida «🔭 Kuzatuvchi qilish» tugmasi bor (bosilgan zahoti foydalanuvchiga botda yangilangan menyu bilan xabar ketadi — /start kutish shart emas). Kuzatuvchi hech qanday guruhga a'zo bo'lmasa ham, botning asosiy menyusida 4 ta doimiy tugmani ko'radi: 📅 Uchrashuvlar, 👥 Guruh, 🕘 Tarix, 📊 Statistika. Har birini bosganda bot avval «qaysi guruh?» deb so'raydi (ro'yxatda — a'zolikdan qat'i nazar BARCHA guruhlar), so'ng o'sha guruh bo'yicha natijani ko'rsatadi:
 - 📅 Uchrashuvlar — tanlangan guruhning kelayotgan uchrashuvlari
@@ -104,6 +111,8 @@ Amalga oshirilgan (MVP):
 - Uchrashuvni bekor qilish (Moderator)
 - Davomatni belgilash (qo'lda ochiladi — Moderator/Kotib tugma orqali, faqat 12 soatlik oynada), natijalarni kanalga e'lon qilish
 - Haftalik hisobot (konsol buyrug'i + Plesk Rejalashtiruvchisi)
+- Kuzatuvchi roli (guruhga a'zo bo'lmasdan uchrashuvlar/a'zolar/tarix/statistikani ko'rish)
+- Boshqaruv panelidan o'tgan uchrashuvni qo'lda qo'shish va davomatini belgilash (bot ishlamagan payt uchun)
 
 Keyingi bosqich uchun qoldirilgan (MVP'ga kirmaydi, [PLAN.md](./PLAN.md) ga qarang):
 - Uchrashuvdan 1 soat/15 daqiqa oldin avtomatik shaxsiy eslatmalar (tez-tez ishlaydigan cron talab qiladi)

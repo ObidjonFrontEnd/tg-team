@@ -10,8 +10,11 @@ use app\models\Group;
 use app\models\GroupMember;
 use app\models\GroupMemberRole;
 use app\models\Meeting;
+use app\models\MeetingUserRole;
+use app\models\Role;
 use app\models\User;
 use app\services\BotHandler;
+use app\services\Texts;
 use Yii;
 use yii\filters\AccessControl;
 use yii\helpers\Url;
@@ -478,6 +481,13 @@ HTML;
             $absentCount = $m->getAttendances()->andWhere(['status' => ['absent', 'excused']])->count();
             $attendanceText = $m->isFinished() ? "✅ {$presentCount} / ❌ {$absentCount}" : '—';
 
+            $action = '—';
+            if (in_array($m->status, [Meeting::STATUS_ATTENDANCE_MARKING, Meeting::STATUS_FINISHED], true)) {
+                $attendanceUrl = Url::to(['admin/meeting-attendance', 'id' => $m->id]);
+                $label = $m->isFinished() ? 'Natijalarni ko\'rish' : 'Davomatni belgilash';
+                $action = '<a href="' . $attendanceUrl . '" style="color:#2c3e50;">' . $label . ' →</a>';
+            }
+
             $rows .= '<tr>'
                 . '<td>' . $m->id . '</td>'
                 . '<td>' . htmlspecialchars($m->group->name ?? '—') . '</td>'
@@ -487,16 +497,258 @@ HTML;
                 . '<td>' . htmlspecialchars($statusLabels[$m->status] ?? $m->status) . '</td>'
                 . '<td>' . htmlspecialchars($m->creator->full_name ?? '—') . '</td>'
                 . '<td>' . $attendanceText . '</td>'
+                . '<td>' . $action . '</td>'
                 . '</tr>';
         }
 
-        $body = $this->table(
-            ['ID', 'Guruh', 'Mavzu', 'Sana/vaqt', 'Format', 'Holat', 'Yaratdi', 'Keldi/Kelmadi'],
+        $table = $this->table(
+            ['ID', 'Guruh', 'Mavzu', 'Sana/vaqt', 'Format', 'Holat', 'Yaratdi', 'Keldi/Kelmadi', ''],
             $rows,
             "Jami: " . count($meetings)
         );
 
-        return $this->page('Uchrashuvlar', 'meetings', $body);
+        $groups = Group::find()->orderBy(['name' => SORT_ASC])->all();
+        $groupOptions = '';
+        foreach ($groups as $g) {
+            $groupOptions .= '<option value="' . $g->id . '">' . htmlspecialchars($g->name) . '</option>';
+        }
+        $createPastUrl = Url::to(['admin/meeting-create-past']);
+        $createPastForm = $groups
+            ? <<<HTML
+<details style="margin-bottom:20px;background:#fff;padding:14px 18px;border-radius:6px;">
+<summary style="cursor:pointer;font-weight:bold;color:#2c3e50;">+ O'tgan uchrashuvni qo'shish (bot ishlamagan payt bo'lib o'tgan)</summary>
+<form method="post" action="{$createPastUrl}" style="margin-top:14px;max-width:420px;">
+<div style="margin-bottom:10px;"><label>Guruh<br><select name="group_id" required style="width:100%;padding:8px;box-sizing:border-box;">{$groupOptions}</select></label></div>
+<div style="margin-bottom:10px;"><label>Mavzu<br><input type="text" name="topic" required style="width:100%;padding:8px;box-sizing:border-box;"></label></div>
+<div style="margin-bottom:10px;"><label>Sana va vaqt<br><input type="datetime-local" name="meeting_at" required style="width:100%;padding:8px;box-sizing:border-box;"></label></div>
+<div style="margin-bottom:10px;"><label>Format<br><select name="format" style="width:100%;padding:8px;box-sizing:border-box;"><option value="offline">Oflayn</option><option value="online">Onlayn</option></select></label></div>
+<button type="submit" style="padding:8px 18px;background:#2c3e50;color:#fff;border:none;border-radius:4px;cursor:pointer;">Yaratish va davomatni belgilashga o'tish</button>
+</form>
+<p style="color:#888;font-size:13px;margin-top:10px;">Ishtirokchilar va rollar guruh shablonidan avtomatik olinadi (xuddi botdagi kabi). Kanalga «e'lon» yuborilmaydi — faqat davomat belgilangandan keyin natijalar kanalga joylanadi.</p>
+</details>
+HTML
+            : '<p style="color:#888;">Avval kamida bitta guruh yarating.</p>';
+
+        return $this->page('Uchrashuvlar', 'meetings', $createPastForm . $table);
+    }
+
+    public function actionMeetingCreatePast(): Response
+    {
+        if (!Yii::$app->request->isPost) {
+            return $this->redirect(['admin/meetings']);
+        }
+
+        $groupId = (int) Yii::$app->request->post('group_id');
+        $topic = trim((string) Yii::$app->request->post('topic'));
+        $meetingAtRaw = trim((string) Yii::$app->request->post('meeting_at'));
+        $format = Yii::$app->request->post('format') === Meeting::FORMAT_ONLINE ? Meeting::FORMAT_ONLINE : Meeting::FORMAT_OFFLINE;
+
+        $group = Group::findOne($groupId);
+        $dt = \DateTime::createFromFormat('Y-m-d\TH:i', $meetingAtRaw) ?: \DateTime::createFromFormat('Y-m-d\TH:i:s', $meetingAtRaw);
+
+        if ($group === null || $topic === '' || !$dt) {
+            Yii::$app->session->setFlash('error', "Guruh, mavzu va sana/vaqt to'g'ri kiritilishi kerak.");
+
+            return $this->redirect(['admin/meetings']);
+        }
+
+        $members = $group->getMembers()->all();
+        if (!$members) {
+            Yii::$app->session->setFlash('error', "«{$group->name}» guruhida a'zolar yo'q — avval a'zolarni qo'shing.");
+
+            return $this->redirect(['admin/meetings']);
+        }
+
+        $meetingAt = $dt->format('Y-m-d H:i:s');
+        $createdBy = $group->moderator_user_id ?? $members[0]->id;
+
+        $transaction = Yii::$app->db->beginTransaction();
+        try {
+            $meeting = new Meeting([
+                'group_id' => $groupId,
+                'topic' => $topic,
+                'meeting_at' => $meetingAt,
+                'format' => $format,
+                'status' => Meeting::STATUS_ATTENDANCE_MARKING,
+                'created_by' => $createdBy,
+                'started_at' => $meetingAt,
+            ]);
+            $meeting->save(false);
+
+            $moderatorRoleId = Role::find()->where(['code' => Role::CODE_MODERATOR])->select('id')->scalar();
+            $ishtirokchiRoleId = Role::ishtirokchi()?->id;
+
+            foreach ($members as $member) {
+                $isModerator = $member->id === $group->moderator_user_id;
+                $roleIds = GroupMemberRole::roleIdsFor($group->id, $member->id);
+
+                if (!$roleIds && !$isModerator && $ishtirokchiRoleId !== null) {
+                    $roleIds = [$ishtirokchiRoleId];
+                }
+                if ($isModerator && $moderatorRoleId) {
+                    $roleIds[] = $moderatorRoleId;
+                }
+
+                foreach (array_unique($roleIds) as $roleId) {
+                    (new MeetingUserRole([
+                        'meeting_id' => $meeting->id,
+                        'user_id' => $member->id,
+                        'role_id' => (int) $roleId,
+                    ]))->save(false);
+                }
+            }
+
+            $transaction->commit();
+        } catch (\Throwable $e) {
+            $transaction->rollBack();
+            Yii::error('actionMeetingCreatePast failed: ' . $e->getMessage());
+            Yii::$app->session->setFlash('error', "Xatolik yuz berdi: " . $e->getMessage());
+
+            return $this->redirect(['admin/meetings']);
+        }
+
+        Yii::$app->session->setFlash('success', "«{$topic}» uchrashuvi qo'shildi. Endi davomatni belgilang.");
+
+        return $this->redirect(['admin/meeting-attendance', 'id' => $meeting->id]);
+    }
+
+    /** O'tgan uchrashuv uchun davomatni qo'lda belgilash (bot ishlamagan payt bo'lib o'tgan uchrashuvlar uchun). */
+    public function actionMeetingAttendance(int $id): Response
+    {
+        $meeting = Meeting::findOne($id);
+        if ($meeting === null) {
+            return $this->page('Uchrashuv topilmadi', 'meetings', '<p>Bunday uchrashuv topilmadi. <a href="' . Url::to(['admin/meetings']) . '">Orqaga</a></p>');
+        }
+
+        $group = $meeting->group;
+        $participants = $meeting->getParticipantsWithRoles();
+        $attendances = $meeting->getAttendances()->indexBy('user_id')->all();
+
+        $statusLabels = [
+            Attendance::STATUS_PRESENT => '✅ Keldi',
+            Attendance::STATUS_ABSENT => '❌ Kelmadi',
+            Attendance::STATUS_EXCUSED => '⚠️ Sababli',
+        ];
+
+        $setUrl = Url::to(['admin/meeting-set-attendance']);
+        $isFinished = $meeting->isFinished();
+
+        $rows = '';
+        foreach ($participants as $uid => $row) {
+            /** @var User $participant */
+            $participant = $row['user'];
+            $currentStatus = $attendances[$uid]->status ?? null;
+            $roleNames = Role::namesOnly($row['roles']);
+
+            $buttons = '';
+            if ($isFinished) {
+                $buttons = $statusLabels[$currentStatus] ?? '— Belgilanmagan';
+            } else {
+                foreach ($statusLabels as $statusValue => $label) {
+                    $isActive = $currentStatus === $statusValue;
+                    $style = $isActive
+                        ? 'background:#2c3e50;color:#fff;border:1px solid #2c3e50;'
+                        : 'background:#fff;color:#2c3e50;border:1px solid #2c3e50;';
+                    $buttons .= "<form method=\"post\" action=\"{$setUrl}\" style=\"display:inline;\">"
+                        . "<input type=\"hidden\" name=\"meeting_id\" value=\"{$meeting->id}\">"
+                        . "<input type=\"hidden\" name=\"user_id\" value=\"{$uid}\">"
+                        . "<input type=\"hidden\" name=\"status\" value=\"{$statusValue}\">"
+                        . "<button type=\"submit\" style=\"font-size:12px;padding:4px 10px;margin-right:4px;border-radius:10px;cursor:pointer;{$style}\">{$label}</button>"
+                        . '</form>';
+                }
+            }
+
+            $rows .= '<tr>'
+                . '<td>' . htmlspecialchars($participant->full_name) . '</td>'
+                . '<td>' . htmlspecialchars($roleNames) . '</td>'
+                . '<td style="white-space:nowrap;">' . $buttons . '</td>'
+                . '</tr>';
+        }
+
+        $table = $this->table(['F.I.Sh.', 'Rollar', 'Davomat'], $rows, "Jami ishtirokchilar: " . count($participants));
+
+        $infoHtml = '<p><a href="' . Url::to(['admin/meetings']) . '" style="color:#2c3e50;">← Uchrashuvlar ro\'yxatiga qaytish</a></p>'
+            . '<div style="background:#fff;padding:14px 18px;border-radius:6px;margin-bottom:16px;">'
+            . '<p style="margin:0 0 6px;"><b>Guruh:</b> ' . htmlspecialchars($group->name ?? '—') . '</p>'
+            . '<p style="margin:0 0 6px;"><b>Mavzu:</b> ' . htmlspecialchars($meeting->topic) . '</p>'
+            . '<p style="margin:0;"><b>Sana/vaqt:</b> ' . htmlspecialchars($meeting->meeting_at) . ' · ' . htmlspecialchars($meeting->formatLabel()) . '</p>'
+            . '</div>';
+
+        $publishHtml = '';
+        if (!$isFinished) {
+            $publishUrl = Url::to(['admin/meeting-publish']);
+            $publishHtml = <<<HTML
+<form method="post" action="{$publishUrl}" style="margin-top:16px;">
+<input type="hidden" name="meeting_id" value="{$meeting->id}">
+<button type="submit" style="padding:10px 20px;background:#1e8449;color:#fff;border:none;border-radius:4px;cursor:pointer;">🏁 Yakunlash va natijalarni kanalga joylashtirish</button>
+</form>
+<p style="color:#888;font-size:13px;margin-top:8px;">Belgilanmagan ishtirokchilar avtomatik «Kelmadi» deb belgilanadi.</p>
+HTML;
+        } else {
+            $publishHtml = '<p style="color:#1e8449;">✅ Natijalar allaqachon kanalga joylangan (' . htmlspecialchars((string) $meeting->results_published_at) . ').</p>';
+        }
+
+        return $this->page("«{$meeting->topic}» — davomat", 'meetings', $infoHtml . $table . $publishHtml);
+    }
+
+    public function actionMeetingSetAttendance(): Response
+    {
+        if (Yii::$app->request->isPost) {
+            $meeting = Meeting::findOne((int) Yii::$app->request->post('meeting_id'));
+            if ($meeting === null) {
+                return $this->redirect(['admin/meetings']);
+            }
+
+            $userId = (int) Yii::$app->request->post('user_id');
+            $status = (string) Yii::$app->request->post('status');
+
+            if (
+                !$meeting->isFinished()
+                && in_array($status, [Attendance::STATUS_PRESENT, Attendance::STATUS_ABSENT, Attendance::STATUS_EXCUSED], true)
+            ) {
+                Attendance::mark($meeting->id, $userId, $status, $meeting->created_by);
+            }
+
+            return $this->redirect(['admin/meeting-attendance', 'id' => $meeting->id]);
+        }
+
+        return $this->redirect(['admin/meetings']);
+    }
+
+    public function actionMeetingPublish(): Response
+    {
+        if (Yii::$app->request->isPost) {
+            $meeting = Meeting::findOne((int) Yii::$app->request->post('meeting_id'));
+
+            if ($meeting !== null && !$meeting->isFinished()) {
+                $group = $meeting->group;
+
+                $participants = $meeting->getParticipantsWithRoles();
+                $marked = $meeting->getAttendances()->select('user_id')->column();
+                foreach (array_keys($participants) as $uid) {
+                    if (!in_array($uid, $marked, true)) {
+                        Attendance::mark($meeting->id, $uid, Attendance::STATUS_ABSENT, $meeting->created_by);
+                    }
+                }
+
+                $meeting->status = Meeting::STATUS_FINISHED;
+                $meeting->ended_at = date('Y-m-d H:i:s');
+                $meeting->results_published_at = date('Y-m-d H:i:s');
+                $meeting->save(false);
+
+                $post = Yii::$app->telegram->sendMessage($group->channel_id, Texts::meetingResults($meeting));
+                Yii::$app->session->setFlash(
+                    !empty($post['ok']) ? 'success' : 'error',
+                    !empty($post['ok'])
+                        ? "Natijalar kanalga joylandi."
+                        : "Uchrashuv yakunlandi, lekin kanalga yubora olmadik: bot kanalda admin emasligi yoki noto'g'ri kanal ID mumkin."
+                );
+
+                return $this->redirect(['admin/meeting-attendance', 'id' => $meeting->id]);
+            }
+        }
+
+        return $this->redirect(['admin/meetings']);
     }
 
     /** Har bir foydalanuvchi bo'yicha svodka: necha marta keldi, necha marta kelmadi. */
