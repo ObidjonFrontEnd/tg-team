@@ -12,10 +12,15 @@ use yii\db\ActiveQuery;
  * @property string $name
  * @property string $channel_id
  * @property int|null $moderator_user_id
+ * @property string $type
  * @property string $created_at
  */
 class Group extends ActiveRecord
 {
+    public const TYPE_NORMAL = 'normal';
+    /** Barcha guruhlardagi ishtirokchilarni avtomatik jamlaydigan maxsus guruh — faqat uning Moderatoriga ko'rinadi. */
+    public const TYPE_UMUMIY = 'umumiy';
+
     public static function tableName(): string
     {
         return '{{%groups}}';
@@ -28,7 +33,13 @@ class Group extends ActiveRecord
             [['moderator_user_id'], 'integer'],
             [['name'], 'string', 'max' => 255],
             [['channel_id'], 'string', 'max' => 64],
+            [['type'], 'in', 'range' => [self::TYPE_NORMAL, self::TYPE_UMUMIY]],
         ];
+    }
+
+    public function isUmumiy(): bool
+    {
+        return $this->type === self::TYPE_UMUMIY;
     }
 
     public function getModerator(): ActiveQuery

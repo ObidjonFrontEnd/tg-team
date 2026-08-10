@@ -27,6 +27,15 @@ Login/parol — `.env` dagi `ADMIN_LOGIN` / `ADMIN_PASSWORD`. Kirgandan so'ng yu
 
 ⚠️ **Guruh yaratish va foydalanuvchini guruhga qo'shish faqat shu boshqaruv panelidan qilinadi** — botning o'zida bunday tugmalar yo'q (mahsulot talabiga ko'ra olib tashlangan). Foydalanuvchi botga `/start` yozib ro'yxatdan o'tadi, so'ng admin uni kerakli guruhga shu paneldan qo'shadi.
 
+### «Umumiy» guruh (barcha ishtirokchilarni nazorat qilish uchun)
+
+Guruh yaratishda «Turi» — **Oddiy** yoki **🌐 Umumiy**. Umumiy guruh:
+- a'zolari **avtomatik** — barcha oddiy guruhlardagi ishtirokchilar yig'iladi (qo'lda qo'shish/o'chirish shart emas, guruhlar o'zgarganda o'zi yangilanadi);
+- botda **faqat shu guruhning Moderatoriga** ko'rinadi — boshqa hech kim (hatto o'sha odamlar Umumiy'ning a'zosi bo'lsa ham) uni o'z «👥 Guruh» ro'yxatida ko'rmaydi;
+- qolgan hamma narsada oddiy guruh kabi ishlaydi — Moderatori uchrashuv yaratishi, davomat belgilashi mumkin, natijalar guruhning o'z kanaliga joylanadi.
+
+Yaratilgandan keyin admin sifatida shu guruhga kerakli odamni **qo'lda qo'shib**, so'ng uni **Moderator qilib tayinlash** kerak — undan keyin a'zolar ro'yxati avtomatik yuritiladi (Moderatorning o'zi hech qanday oddiy guruhga a'zo bo'lmasa ham, Umumiy'dan chiqarilmaydi).
+
 ### O'tgan uchrashuvni qo'lda qo'shish (bot ishlamagan payt bo'lib o'tgan uchrashuvlar uchun)
 
 «Uchrashuvlar» sahifasida «+ O'tgan uchrashuvni qo'shish» — guruh, mavzu, sana/vaqt (o'tmishdagi ham bo'lishi mumkin) va formatni kiritib yuboriladi:
@@ -47,6 +56,8 @@ Bir nechta odam bir vaqtda Kuzatuvchi bo'lishi mumkin.
 - **Oddiy a'zo** — 2 tugma: 📅 Uchrashuvlar (ko'rish), 👥 Guruh (a'zolar ro'yxati — faqat ko'rish)
 - **Kotib** (guruh shablonida shu rol berilgan bo'lsa) — 3 tugma: yuqoridagi ikkitasi + ✅ Davomat
 - **Moderator** — 4 tugma: 📅 Uchrashuvlar, 👥 Guruh, ➕ Yangi uchrashuv, ✅ Davomat
+
+Foydalanuvchi bir nechta guruhga a'zo bo'lsa, alohida «guruhni almashtirish» tugmasi yo'q — «👥 Guruh» bosilganda bot avval qaysi guruh kerakligini so'raydi, tanlangan guruh keyingi safar «faol» guruh sifatida ishlatiladi (Uchrashuvlar/Davomat ham shu bilan ishlaydi).
 
 **➕ Yangi uchrashuv** — 3 qadam: mavzu → sana/vaqt → format → **shu zahoti yaratiladi va kanalga e'lon qilinadi**.
 - Sana/vaqt endi **kalendar orqali** tanlanadi (bugundan boshlab keyingi 14 kun tugma sifatida, so'ng soat tugmalari) — erkin matn yozish shart emas, lekin «✏️ Boshqa sana/vaqt» tugmasi bilan qo'lda ham yozish mumkin (turli formatlarni tushunadi: `2026-8-8 16 00`, `2026-08-08 16:00` va h.k.). Kamida qancha vaqt oldin yaratish kerakligi bo'yicha cheklov **yo'q** — hoziroq boshlanadigan uchrashuv ham yaratsa bo'ladi.

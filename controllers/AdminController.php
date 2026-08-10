@@ -105,6 +105,9 @@ class AdminController extends Controller
             $moderatorName = $g->moderator->full_name ?? '—';
             $membersUrl = Url::to(['admin/group-members', 'id' => $g->id]);
             $nameEsc = htmlspecialchars($g->name, ENT_QUOTES);
+            $typeBadge = $g->isUmumiy()
+                ? '<span style="background:#8e44ad;color:#fff;padding:2px 8px;border-radius:10px;font-size:12px;">🌐 Umumiy</span>'
+                : '<span style="color:#888;font-size:12px;">Oddiy</span>';
             $deleteBtn = "<form method=\"post\" action=\"{$deleteGroupUrl}\" onsubmit=\"return confirm('«{$nameEsc}» guruhini va uning BARCHA uchrashuvlarini butunlay o\\'chirmoqchimisiz? Bu amalni ortga qaytarib bo\\'lmaydi.');\">"
                 . "<input type=\"hidden\" name=\"group_id\" value=\"{$g->id}\">"
                 . '<button type="submit" style="font-size:12px;padding:3px 10px;border:1px solid #c0392b;background:#fff;color:#c0392b;border-radius:10px;cursor:pointer;">🗑 O\'chirish</button>'
@@ -112,6 +115,7 @@ class AdminController extends Controller
             $rows .= '<tr>'
                 . '<td>' . $g->id . '</td>'
                 . '<td><a href="' . $membersUrl . '" style="color:#2c3e50;font-weight:bold;text-decoration:none;">' . htmlspecialchars($g->name) . ' →</a></td>'
+                . '<td>' . $typeBadge . '</td>'
                 . '<td>' . htmlspecialchars($g->channel_id) . '</td>'
                 . '<td>' . htmlspecialchars($moderatorName) . '</td>'
                 . '<td><a href="' . $membersUrl . '">' . $membersCount . ' — a\'zolarni ko\'rish</a></td>'
@@ -122,7 +126,7 @@ class AdminController extends Controller
         }
 
         $table = $this->table(
-            ['ID', 'Nomi', 'Kanal', 'Moderator', 'A\'zolar', 'Uchrashuvlar', 'Qo\'shilish kodi', ''],
+            ['ID', 'Nomi', 'Turi', 'Kanal', 'Moderator', 'A\'zolar', 'Uchrashuvlar', 'Qo\'shilish kodi', ''],
             $rows,
             "Jami: " . count($groups) . ' <span style="color:#aaa;">(guruh nomini yoki a\'zolar sonini bosing — ishtirokchilar ro\'yxati ochiladi)</span>'
         );
@@ -134,6 +138,7 @@ class AdminController extends Controller
 <form method="post" action="{$createGroupUrl}" style="margin-top:14px;max-width:420px;">
 <div style="margin-bottom:10px;"><label>Guruh nomi<br><input type="text" name="name" required style="width:100%;padding:8px;box-sizing:border-box;"></label></div>
 <div style="margin-bottom:10px;"><label>Kanal ID / username (masalan @kanal yoki -100...)<br><input type="text" name="channel_id" required style="width:100%;padding:8px;box-sizing:border-box;"></label></div>
+<div style="margin-bottom:10px;"><label>Turi<br><select name="type" style="width:100%;padding:8px;box-sizing:border-box;"><option value="normal">Oddiy guruh</option><option value="umumiy">🌐 Umumiy — barcha guruhlar ishtirokchilarini avtomatik jamlaydi, faqat shu guruhning Moderatoriga ko'rinadi</option></select></label></div>
 <button type="submit" style="padding:8px 18px;background:#2c3e50;color:#fff;border:none;border-radius:4px;cursor:pointer;">Yaratish</button>
 </form>
 </details>
@@ -147,9 +152,14 @@ HTML;
         if (Yii::$app->request->isPost) {
             $name = trim((string) Yii::$app->request->post('name'));
             $channelId = trim((string) Yii::$app->request->post('channel_id'));
+            $type = Yii::$app->request->post('type') === Group::TYPE_UMUMIY ? Group::TYPE_UMUMIY : Group::TYPE_NORMAL;
             if ($name !== '' && $channelId !== '') {
-                $group = new Group(['name' => $name, 'channel_id' => $channelId]);
+                $group = new Group(['name' => $name, 'channel_id' => $channelId, 'type' => $type]);
                 $group->save(false);
+
+                if ($group->isUmumiy()) {
+                    $this->syncUmumiyGroupFull($group);
+                }
             }
         }
 
@@ -165,6 +175,10 @@ HTML;
             if ($group !== null && $userId > 0 && !$group->hasMember($userId)) {
                 (new GroupMember(['group_id' => $groupId, 'user_id' => $userId]))->save(false);
                 // Alohida rol berilmagan bo'lsa, "Ishtirokchi" avtomatik ko'rsatiladi (GroupMemberRole::roleIdsFor fallback'i) — bazaga yozilmaydi.
+
+                if (!$group->isUmumiy()) {
+                    $this->syncUmumiyAdd($userId);
+                }
 
                 $member = User::findOne($userId);
                 if ($member !== null) {
@@ -182,6 +196,56 @@ HTML;
         }
 
         return $this->redirect(['admin/groups']);
+    }
+
+    // -------------------------------------------------- "Umumiy" guruh sinxronizatsiyasi
+
+    /**
+     * «Umumiy» guruhlarga yangi qo'shilgan a'zoni ham qo'shadi (oddiy guruhga qo'shilganda chaqiriladi).
+     */
+    private function syncUmumiyAdd(int $userId): void
+    {
+        foreach (Group::find()->where(['type' => Group::TYPE_UMUMIY])->all() as $umumiy) {
+            if (!$umumiy->hasMember($userId)) {
+                (new GroupMember(['group_id' => $umumiy->id, 'user_id' => $userId]))->save(false);
+            }
+        }
+    }
+
+    /**
+     * Foydalanuvchi biror oddiy guruhdan chiqarilganda (yoki oddiy guruh o'chirilganda) chaqiriladi:
+     * agar u endi hech qanday oddiy guruhga a'zo bo'lmasa — «Umumiy» guruh(lar)dan ham chiqariladi
+     * (guruhning o'z Moderatori bundan mustasno — u har doim saqlanib qoladi).
+     */
+    private function syncUmumiyRemoveIfOrphaned(int $userId): void
+    {
+        $normalGroupIds = Group::find()->where(['type' => Group::TYPE_NORMAL])->select('id')->column();
+        $stillInNormalGroup = GroupMember::find()
+            ->where(['user_id' => $userId, 'group_id' => $normalGroupIds])
+            ->exists();
+        if ($stillInNormalGroup) {
+            return;
+        }
+
+        foreach (Group::find()->where(['type' => Group::TYPE_UMUMIY])->all() as $umumiy) {
+            if ($umumiy->moderator_user_id === $userId) {
+                continue;
+            }
+            GroupMember::deleteAll(['group_id' => $umumiy->id, 'user_id' => $userId]);
+            GroupMemberRole::deleteAll(['group_id' => $umumiy->id, 'user_id' => $userId]);
+        }
+    }
+
+    /** Yangi yaratilgan «Umumiy» guruhni darhol hozirgi barcha oddiy guruh a'zolari bilan to'ldiradi. */
+    private function syncUmumiyGroupFull(Group $umumiy): void
+    {
+        $normalGroupIds = Group::find()->where(['type' => Group::TYPE_NORMAL])->select('id')->column();
+        $userIds = GroupMember::find()->where(['group_id' => $normalGroupIds])->select('user_id')->distinct()->column();
+        foreach ($userIds as $uid) {
+            if (!$umumiy->hasMember((int) $uid)) {
+                (new GroupMember(['group_id' => $umumiy->id, 'user_id' => (int) $uid]))->save(false);
+            }
+        }
     }
 
     public function actionGroupUpdateChannel(): Response
@@ -210,8 +274,12 @@ HTML;
             $group = Group::findOne((int) Yii::$app->request->post('group_id'));
             if ($group !== null) {
                 $name = $group->name;
+                $memberIds = !$group->isUmumiy() ? $group->getMembers()->select('id')->column() : [];
                 try {
                     $group->delete();
+                    foreach ($memberIds as $uid) {
+                        $this->syncUmumiyRemoveIfOrphaned((int) $uid);
+                    }
                     Yii::$app->session->setFlash('success', "«{$name}» guruhi (va uning barcha uchrashuvlari) o'chirildi.");
                 } catch (\Throwable $e) {
                     Yii::error('Group delete failed: ' . $e->getMessage());
@@ -235,6 +303,9 @@ HTML;
                 if ($group->moderator_user_id === $userId) {
                     $group->moderator_user_id = null;
                     $group->save(false);
+                }
+                if (!$group->isUmumiy()) {
+                    $this->syncUmumiyRemoveIfOrphaned($userId);
                 }
                 Yii::$app->session->setFlash('success', "A'zo guruhdan chiqarildi.");
             }
@@ -456,7 +527,12 @@ HTML
 </form>
 HTML;
 
+        $umumiyNote = $group->isUmumiy()
+            ? '<p style="background:#f4ecf7;color:#6c3483;padding:10px 14px;border-radius:6px;">🌐 Bu — <b>Umumiy</b> guruh: a\'zolari barcha oddiy guruhlardagi ishtirokchilardan avtomatik to\'ldiriladi/yangilanadi va botda faqat shu guruhning Moderatoriga ko\'rinadi. Qo\'lda qo\'shish/chiqarish asosan Moderatorni belgilash uchun kerak bo\'ladi.</p>'
+            : '';
+
         $info = '<p><a href="' . Url::to(['admin/groups']) . '" style="color:#2c3e50;">← Guruhlar ro\'yxatiga qaytish</a></p>'
+            . $umumiyNote
             . $channelForm
             . '<p><b>Qo\'shilish kodi:</b> <code>' . $group->id . '</code></p>';
 
@@ -481,12 +557,14 @@ HTML;
             $absentCount = $m->getAttendances()->andWhere(['status' => ['absent', 'excused']])->count();
             $attendanceText = $m->isFinished() ? "✅ {$presentCount} / ❌ {$absentCount}" : '—';
 
-            $action = '—';
+            $action = '';
             if (in_array($m->status, [Meeting::STATUS_ATTENDANCE_MARKING, Meeting::STATUS_FINISHED], true)) {
                 $attendanceUrl = Url::to(['admin/meeting-attendance', 'id' => $m->id]);
-                $label = $m->isFinished() ? 'Natijalarni ko\'rish' : 'Davomatni belgilash';
-                $action = '<a href="' . $attendanceUrl . '" style="color:#2c3e50;">' . $label . ' →</a>';
+                $label = $m->isFinished() ? 'Natijalar' : 'Davomat';
+                $action .= '<a href="' . $attendanceUrl . '" style="color:#2c3e50;margin-right:10px;">' . $label . ' →</a>';
             }
+            $editUrl = Url::to(['admin/meeting-edit', 'id' => $m->id]);
+            $action .= '<a href="' . $editUrl . '" style="color:#2c3e50;">✏️ Tahrirlash</a>';
 
             $rows .= '<tr>'
                 . '<td>' . $m->id . '</td>'
@@ -612,6 +690,76 @@ HTML
         return $this->redirect(['admin/meeting-attendance', 'id' => $meeting->id]);
     }
 
+    /** Uchrashuv ma'lumotlarini tahrirlash — mavzu, sana/vaqt, format (guruh o'zgartirilmaydi, chunki rollar guruhga bog'liq). */
+    public function actionMeetingEdit(int $id): Response
+    {
+        $meeting = Meeting::findOne($id);
+        if ($meeting === null) {
+            return $this->page('Uchrashuv topilmadi', 'meetings', '<p>Bunday uchrashuv topilmadi. <a href="' . Url::to(['admin/meetings']) . '">Orqaga</a></p>');
+        }
+
+        if (Yii::$app->request->isPost) {
+            $topic = trim((string) Yii::$app->request->post('topic'));
+            $meetingAtRaw = trim((string) Yii::$app->request->post('meeting_at'));
+            $format = Yii::$app->request->post('format') === Meeting::FORMAT_ONLINE ? Meeting::FORMAT_ONLINE : Meeting::FORMAT_OFFLINE;
+            $dt = \DateTime::createFromFormat('Y-m-d\TH:i', $meetingAtRaw) ?: \DateTime::createFromFormat('Y-m-d\TH:i:s', $meetingAtRaw);
+
+            if ($topic === '' || !$dt) {
+                Yii::$app->session->setFlash('error', "Mavzu va sana/vaqt to'g'ri kiritilishi kerak.");
+
+                return $this->redirect(['admin/meeting-edit', 'id' => $id]);
+            }
+
+            $meeting->topic = $topic;
+            $meeting->meeting_at = $dt->format('Y-m-d H:i:s');
+            $meeting->format = $format;
+            $meeting->save(false);
+
+            Yii::$app->session->setFlash(
+                'success',
+                "Uchrashuv yangilandi." . ($meeting->isFinished()
+                    ? " Kanalga joylangan post avtomatik yangilanmaydi — kerak bo'lsa, «Natijalar» sahifasidan qayta joylang."
+                    : '')
+            );
+
+            return $this->redirect(['admin/meetings']);
+        }
+
+        $group = $meeting->group;
+        $statusLabels = [
+            Meeting::STATUS_SCHEDULED => 'Rejalashtirilgan',
+            Meeting::STATUS_ANNOUNCED => 'E\'lon qilingan',
+            Meeting::STATUS_ATTENDANCE_MARKING => 'Davomat belgilanmoqda',
+            Meeting::STATUS_FINISHED => 'Yakunlangan',
+            Meeting::STATUS_CANCELLED => 'Bekor qilingan',
+        ];
+
+        $actionUrl = Url::to(['admin/meeting-edit', 'id' => $id]);
+        $backUrl = Url::to(['admin/meetings']);
+        $groupNameEsc = htmlspecialchars($group->name ?? '—');
+        $topicEsc = htmlspecialchars($meeting->topic, ENT_QUOTES);
+        $meetingAtValue = str_replace(' ', 'T', substr($meeting->meeting_at, 0, 16));
+        $offlineSelected = $meeting->format === Meeting::FORMAT_OFFLINE ? ' selected' : '';
+        $onlineSelected = $meeting->format === Meeting::FORMAT_ONLINE ? ' selected' : '';
+
+        $attendanceLink = in_array($meeting->status, [Meeting::STATUS_ATTENDANCE_MARKING, Meeting::STATUS_FINISHED], true)
+            ? ' · <a href="' . Url::to(['admin/meeting-attendance', 'id' => $id]) . '" style="color:#2c3e50;">Davomat/natijalarni ochish →</a>'
+            : '';
+
+        $form = <<<HTML
+<p><a href="{$backUrl}" style="color:#2c3e50;">← Uchrashuvlar ro'yxatiga qaytish</a>{$attendanceLink}</p>
+<form method="post" action="{$actionUrl}" style="background:#fff;padding:14px 18px;border-radius:6px;max-width:480px;">
+<p style="color:#888;margin:0 0 14px;"><b>Guruh:</b> {$groupNameEsc} &nbsp;·&nbsp; <b>Holat:</b> {$statusLabels[$meeting->status]}</p>
+<div style="margin-bottom:10px;"><label>Mavzu<br><input type="text" name="topic" value="{$topicEsc}" required style="width:100%;padding:8px;margin-top:4px;box-sizing:border-box;"></label></div>
+<div style="margin-bottom:10px;"><label>Sana va vaqt<br><input type="datetime-local" name="meeting_at" value="{$meetingAtValue}" required style="width:100%;padding:8px;margin-top:4px;box-sizing:border-box;"></label></div>
+<div style="margin-bottom:10px;"><label>Format<br><select name="format" style="width:100%;padding:8px;margin-top:4px;box-sizing:border-box;"><option value="offline"{$offlineSelected}>Oflayn</option><option value="online"{$onlineSelected}>Onlayn</option></select></label></div>
+<button type="submit" style="padding:8px 18px;background:#2c3e50;color:#fff;border:none;border-radius:4px;cursor:pointer;">Saqlash</button>
+</form>
+HTML;
+
+        return $this->page("«{$meeting->topic}»ni tahrirlash", 'meetings', $form);
+    }
+
     /** O'tgan uchrashuv uchun davomatni qo'lda belgilash (bot ishlamagan payt bo'lib o'tgan uchrashuvlar uchun). */
     public function actionMeetingAttendance(int $id): Response
     {
@@ -640,22 +788,20 @@ HTML
             $currentStatus = $attendances[$uid]->status ?? null;
             $roleNames = Role::namesOnly($row['roles']);
 
+            // Yakunlangandan keyin ham tuzatish mumkin (masalan xato bosilgan bo'lsa) — «🔁 Qayta joylashtirish»
+            // tugmasi bilan kanaldagi postni to'g'irlangan holda qayta yuborish mumkin.
             $buttons = '';
-            if ($isFinished) {
-                $buttons = $statusLabels[$currentStatus] ?? '— Belgilanmagan';
-            } else {
-                foreach ($statusLabels as $statusValue => $label) {
-                    $isActive = $currentStatus === $statusValue;
-                    $style = $isActive
-                        ? 'background:#2c3e50;color:#fff;border:1px solid #2c3e50;'
-                        : 'background:#fff;color:#2c3e50;border:1px solid #2c3e50;';
-                    $buttons .= "<form method=\"post\" action=\"{$setUrl}\" style=\"display:inline;\">"
-                        . "<input type=\"hidden\" name=\"meeting_id\" value=\"{$meeting->id}\">"
-                        . "<input type=\"hidden\" name=\"user_id\" value=\"{$uid}\">"
-                        . "<input type=\"hidden\" name=\"status\" value=\"{$statusValue}\">"
-                        . "<button type=\"submit\" style=\"font-size:12px;padding:4px 10px;margin-right:4px;border-radius:10px;cursor:pointer;{$style}\">{$label}</button>"
-                        . '</form>';
-                }
+            foreach ($statusLabels as $statusValue => $label) {
+                $isActive = $currentStatus === $statusValue;
+                $style = $isActive
+                    ? 'background:#2c3e50;color:#fff;border:1px solid #2c3e50;'
+                    : 'background:#fff;color:#2c3e50;border:1px solid #2c3e50;';
+                $buttons .= "<form method=\"post\" action=\"{$setUrl}\" style=\"display:inline;\">"
+                    . "<input type=\"hidden\" name=\"meeting_id\" value=\"{$meeting->id}\">"
+                    . "<input type=\"hidden\" name=\"user_id\" value=\"{$uid}\">"
+                    . "<input type=\"hidden\" name=\"status\" value=\"{$statusValue}\">"
+                    . "<button type=\"submit\" style=\"font-size:12px;padding:4px 10px;margin-right:4px;border-radius:10px;cursor:pointer;{$style}\">{$label}</button>"
+                    . '</form>';
             }
 
             $rows .= '<tr>'
@@ -674,19 +820,18 @@ HTML
             . '<p style="margin:0;"><b>Sana/vaqt:</b> ' . htmlspecialchars($meeting->meeting_at) . ' · ' . htmlspecialchars($meeting->formatLabel()) . '</p>'
             . '</div>';
 
-        $publishHtml = '';
-        if (!$isFinished) {
-            $publishUrl = Url::to(['admin/meeting-publish']);
-            $publishHtml = <<<HTML
+        $publishUrl = Url::to(['admin/meeting-publish']);
+        $publishLabel = $isFinished ? "🔁 Natijalarni qayta hisoblab kanalga qayta joylashtirish" : "🏁 Yakunlash va natijalarni kanalga joylashtirish";
+        $publishNote = $isFinished
+            ? '✅ Natijalar ' . htmlspecialchars((string) $meeting->results_published_at) . ' da joylangan. Davomatni tuzatgan bo\'lsangiz, tugmani qayta bosing — kanalga yangilangan post ketadi.'
+            : "Belgilanmagan ishtirokchilar avtomatik «Kelmadi» deb belgilanadi.";
+        $publishHtml = <<<HTML
 <form method="post" action="{$publishUrl}" style="margin-top:16px;">
 <input type="hidden" name="meeting_id" value="{$meeting->id}">
-<button type="submit" style="padding:10px 20px;background:#1e8449;color:#fff;border:none;border-radius:4px;cursor:pointer;">🏁 Yakunlash va natijalarni kanalga joylashtirish</button>
+<button type="submit" style="padding:10px 20px;background:#1e8449;color:#fff;border:none;border-radius:4px;cursor:pointer;">{$publishLabel}</button>
 </form>
-<p style="color:#888;font-size:13px;margin-top:8px;">Belgilanmagan ishtirokchilar avtomatik «Kelmadi» deb belgilanadi.</p>
+<p style="color:#888;font-size:13px;margin-top:8px;">{$publishNote}</p>
 HTML;
-        } else {
-            $publishHtml = '<p style="color:#1e8449;">✅ Natijalar allaqachon kanalga joylangan (' . htmlspecialchars((string) $meeting->results_published_at) . ').</p>';
-        }
 
         return $this->page("«{$meeting->topic}» — davomat", 'meetings', $infoHtml . $table . $publishHtml);
     }
@@ -702,10 +847,7 @@ HTML;
             $userId = (int) Yii::$app->request->post('user_id');
             $status = (string) Yii::$app->request->post('status');
 
-            if (
-                !$meeting->isFinished()
-                && in_array($status, [Attendance::STATUS_PRESENT, Attendance::STATUS_ABSENT, Attendance::STATUS_EXCUSED], true)
-            ) {
+            if (in_array($status, [Attendance::STATUS_PRESENT, Attendance::STATUS_ABSENT, Attendance::STATUS_EXCUSED], true)) {
                 Attendance::mark($meeting->id, $userId, $status, $meeting->created_by);
             }
 
@@ -720,7 +862,7 @@ HTML;
         if (Yii::$app->request->isPost) {
             $meeting = Meeting::findOne((int) Yii::$app->request->post('meeting_id'));
 
-            if ($meeting !== null && !$meeting->isFinished()) {
+            if ($meeting !== null) {
                 $group = $meeting->group;
 
                 $participants = $meeting->getParticipantsWithRoles();

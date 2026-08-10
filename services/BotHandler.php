@@ -28,7 +28,6 @@ class BotHandler
     private const BTN_CREATE_MEETING = '➕ Yangi uchrashuv';
     private const BTN_MARK_ATTENDANCE = '✅ Davomat';
     private const BTN_GROUP_MEMBERS = '👥 Guruh';
-    private const BTN_SWITCH_GROUP = '🔀 Guruhni almashtirish';
     private const BTN_MEETING_HISTORY = '🕘 Tarix';
     private const BTN_STATS = '📊 Statistika';
 
@@ -65,10 +64,20 @@ class BotHandler
         return User::findOrCreateByTelegramId((int) $from['id'], $from['username'] ?? null);
     }
 
-    /** @return Group[] Foydalanuvchi a'zo bo'lgan barcha guruhlar (id bo'yicha tartiblangan). */
+    /**
+     * @return Group[] Foydalanuvchi a'zo bo'lgan barcha guruhlar (id bo'yicha tartiblangan).
+     * «Umumiy» turidagi guruh (barcha ishtirokchilar avtomatik jamlangan) faqat uning
+     * Moderatoriga ko'rinadi — a'zolikdan qat'i nazar boshqa hech kimga ko'rsatilmaydi.
+     */
     private function userGroups(User $user): array
     {
-        return $user->getGroups()->orderBy(['{{%groups}}.id' => SORT_ASC])->all();
+        return $user->getGroups()
+            ->andWhere(['or',
+                ['<>', '{{%groups}}.type', Group::TYPE_UMUMIY],
+                ['{{%groups}}.moderator_user_id' => $user->id],
+            ])
+            ->orderBy(['{{%groups}}.id' => SORT_ASC])
+            ->all();
     }
 
     /**
@@ -112,7 +121,8 @@ class BotHandler
      * oddiy a'zo — 2 tugma (Uchrashuvlar, Guruh); Kotib — 3 (+ Davomat); Moderator — 4 (+ Yangi uchrashuv, Davomat);
      * Kuzatuvchi — 4 tugma (Uchrashuvlar, Guruh, Tarix, Statistika), har biri bosilganda o'zi alohida
      * guruh so'raydi (chunki Kuzatuvchi biror guruhga a'zo emas — «faol guruh» tushunchasi unga tegishli emas).
-     * Agar foydalanuvchi bir nechta guruhga a'zo bo'lsa, guruhni almashtirish tugmasi ham qo'shiladi.
+     * Alohida «guruhni almashtirish» tugmasi yo'q — bir nechta guruhga a'zo bo'lsa, «👥 Guruh»
+     * tugmasi bosilganda o'zi qaysi guruh kerakligini so'raydi (qarang: showGroupMembers).
      */
     private function mainMenuKeyboard(User $user, ?Group $group): array
     {
@@ -143,30 +153,22 @@ class BotHandler
             $rows[] = $row2;
         }
 
-        if (count($this->userGroups($user)) > 1) {
-            $rows[] = [self::BTN_SWITCH_GROUP];
-        }
-
         return $rows;
     }
 
-    /** Bir nechta guruhga a'zo bo'lsa — tanlash uchun inline ro'yxat. */
-    private function showGroupSwitcher(int $chatId, User $user): void
+    /** «👥 Guruh» bosilganda: bir nechta guruhga a'zo bo'lsa — avval qaysi guruh kerakligini so'raydi. */
+    private function showGroupPicker(int $chatId, User $user): void
     {
         $groups = $this->userGroups($user);
-        if (count($groups) < 2) {
-            return;
-        }
-
         $rows = [];
         foreach ($groups as $group) {
-            $prefix = $group->id === $user->active_group_id ? '✅ ' : '';
-            $rows[] = [['text' => $prefix . $group->name, 'callback_data' => "swg:{$group->id}"]];
+            $rows[] = [['text' => $group->name, 'callback_data' => "swg:{$group->id}"]];
         }
 
-        $this->api->sendMessage($chatId, "Qaysi guruh bilan ishlaysiz?", $rows);
+        $this->api->sendMessage($chatId, "👥 Qaysi guruh a'zolarini ko'rmoqchisiz?", $rows);
     }
 
+    /** Guruh tanlangach — faol guruh sifatida saqlanadi (keyingi Uchrashuvlar/Davomat ham shu bilan ishlaydi) va a'zolari ko'rsatiladi. */
     private function switchGroup(int $chatId, User $user, int $groupId): void
     {
         $isMember = GroupMember::find()->where(['group_id' => $groupId, 'user_id' => $user->id])->exists();
@@ -177,7 +179,7 @@ class BotHandler
         $user->active_group_id = $groupId;
         $user->save(false);
 
-        $this->sendMainMenu($chatId, $user, $this->currentGroup($user), "✅ Faol guruh: " . Group::findOne($groupId)->name);
+        $this->showGroupMembers($chatId, $user, Group::findOne($groupId));
     }
 
     private function isKotibInGroup(Group $group, User $user): bool
@@ -344,6 +346,8 @@ class BotHandler
             case self::BTN_GROUP_MEMBERS:
                 if ($user->is_observer) {
                     $this->showObserverGroupPicker($chatId, 'ogm', "👥 Qaysi guruh a'zolarini ko'rmoqchisiz?");
+                } elseif (count($this->userGroups($user)) > 1) {
+                    $this->showGroupPicker($chatId, $user);
                 } else {
                     $this->showGroupMembers($chatId, $user, $group);
                 }
@@ -351,10 +355,6 @@ class BotHandler
 
             case self::BTN_MARK_ATTENDANCE:
                 $this->showAttendanceMeetingList($chatId, $user, $group);
-                break;
-
-            case self::BTN_SWITCH_GROUP:
-                $this->showGroupSwitcher($chatId, $user);
                 break;
 
             case self::BTN_MEETING_HISTORY:
