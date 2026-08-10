@@ -27,7 +27,13 @@ Login/parol — `.env` dagi `ADMIN_LOGIN` / `ADMIN_PASSWORD`. Kirgandan so'ng yu
 
 ⚠️ **Guruh yaratish va foydalanuvchini guruhga qo'shish faqat shu boshqaruv panelidan qilinadi** — botning o'zida bunday tugmalar yo'q (mahsulot talabiga ko'ra olib tashlangan). Foydalanuvchi botga `/start` yozib ro'yxatdan o'tadi, so'ng admin uni kerakli guruhga shu paneldan qo'shadi.
 
-**Kuzatuvchi (observer):** «Foydalanuvchilar» ro'yxatida har bir odam yonida «🔭 Kuzatuvchi qilish» tugmasi bor (bosilgan zahoti foydalanuvchiga botda yangilangan menyu bilan xabar ketadi — /start kutish shart emas). Kuzatuvchi — hech qanday guruhga a'zo bo'lmasdan turib botda «👁 Kuzatuv» tugmasini ko'radi: undan istalgan guruhni tanlaydi, so'ng o'sha guruh bo'yicha — 📅 kelayotgan uchrashuvlar, 🕘 o'tgan uchrashuvlar tarixi (har biri natijasi bilan), 👥 a'zolar ro'yxati (rollari bilan, kontaktisiz) yoki 📊 davomat statistikasi (kim nechta marta keldi/kelmadi) — birini ko'rishi mumkin. Bir nechta odam bir vaqtda Kuzatuvchi bo'lishi mumkin.
+**Kuzatuvchi (observer):** «Foydalanuvchilar» ro'yxatida har bir odam yonida «🔭 Kuzatuvchi qilish» tugmasi bor (bosilgan zahoti foydalanuvchiga botda yangilangan menyu bilan xabar ketadi — /start kutish shart emas). Kuzatuvchi hech qanday guruhga a'zo bo'lmasa ham, botning asosiy menyusida 4 ta doimiy tugmani ko'radi: 📅 Uchrashuvlar, 👥 Guruh, 🕘 Tarix, 📊 Statistika. Har birini bosganda bot avval «qaysi guruh?» deb so'raydi (ro'yxatda — a'zolikdan qat'i nazar BARCHA guruhlar), so'ng o'sha guruh bo'yicha natijani ko'rsatadi:
+- 📅 Uchrashuvlar — tanlangan guruhning kelayotgan uchrashuvlari
+- 👥 Guruh — tanlangan guruh a'zolari va rollari
+- 🕘 Tarix — tanlangan guruhning yakunlangan uchrashuvlari, har biri natijasi (✅/❌) bilan
+- 📊 Statistika — a'zolar bo'yicha kim nechta marta keldi/kelmadi, **bu hafta / bu oy / jami** bo'yicha alohida-alohida (shunda bitta yomon hafta butun tarixni yomon ko'rsatmaydi), shu bilan birga guruhda bu hafta/oy/jami nechta uchrashuv bo'lgani ham ko'rsatiladi
+
+Bir nechta odam bir vaqtda Kuzatuvchi bo'lishi mumkin.
 
 ### Bot menyusi — rolga qarab farq qiladi
 

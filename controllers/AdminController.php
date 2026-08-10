@@ -293,7 +293,7 @@ HTML;
                 (new BotHandler(Yii::$app->telegram))->notifyUserMenu(
                     $user,
                     $user->is_observer
-                        ? "👁 Sizga «Kuzatuvchi» roli berildi. Endi «👁 Kuzatuv» tugmasi orqali istalgan guruhning uchrashuvlari, a'zolari va davomat statistikasini ko'rishingiz mumkin. Yangi menyu:"
+                        ? "👁 Sizga «Kuzatuvchi» roli berildi. Pastdagi tugmalardan birini bosing — so'ng qaysi guruh kerakligini so'raydi va o'sha guruhning uchrashuvlari/a'zolari/tarixi/statistikasini ko'rsatadi. Yangi menyu:"
                         : "ℹ️ Sizning «Kuzatuvchi» rolingiz olib tashlandi. Yangi menyu:"
                 );
 
