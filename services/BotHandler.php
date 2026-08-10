@@ -203,6 +203,27 @@ class BotHandler
         return in_array((string) $user->telegram_id, $ids, true);
     }
 
+    /** Har qanday ko'p bosqichli jarayonni (uchrashuv yaratish/tahrirlash, mehmon qo'shish va h.k.) bekor qilish tugmasi. */
+    private function cancelKeyboard(): array
+    {
+        return [[['text' => '❌ Bekor qilish', 'callback_data' => 'cancelflow']]];
+    }
+
+    /** Foydalanuvchi ozod matn o'rniga asosiy menyu tugmalaridan birini bosganini aniqlaydi. */
+    private function isMenuButtonText(string $text): bool
+    {
+        return str_starts_with($text, '/') || in_array($text, [
+            self::BTN_UPCOMING,
+            self::BTN_UPCOMING_TRENING,
+            self::BTN_CREATE_MEETING,
+            self::BTN_CREATE_TRENING,
+            self::BTN_MARK_ATTENDANCE,
+            self::BTN_GROUP_MEMBERS,
+            self::BTN_MEETING_HISTORY,
+            self::BTN_STATS,
+        ], true);
+    }
+
     private function sendMainMenu(int $chatId, User $user, ?Group $group, string $text): void
     {
         $this->api->sendMessage($chatId, $text, null, $this->mainMenuKeyboard($user, $group));
@@ -275,6 +296,37 @@ class BotHandler
             $this->api->sendMessage($chatId, Texts::welcome());
 
             return;
+        }
+
+        /**
+         * Himoya: agar foydalanuvchi hozir ozod matn kutilayotgan holatda bo'lsa (ism/lavozim/telefon,
+         * uchrashuv mavzusi va h.k.), lekin aslida menyu tugmasini bossa — bu matnni ma'lumot sifatida
+         * SAQLAMASLIK kerak (aks holda ismi/lavozimi/telefoni yoki uchrashuv mavzusi tugma matniga
+         * aylanib qoladi). Holatni tozalab, pastdagi asosiy menyu blokiga o'tkazamiz.
+         */
+        $registrationStates = ['reg_wait_name', 'reg_wait_position', 'reg_wait_phone'];
+        $rawTextCaptureStates = [
+            ...$registrationStates,
+            'meeting_wait_topic', 'meeting_wait_date', 'meeting_wait_time_custom',
+            'meeting_wait_cancel_reason', 'meeting_edit_topic', 'meeting_edit_date',
+            'meeting_wait_guest_name',
+        ];
+        if (in_array($stateName, $rawTextCaptureStates, true) && $this->isMenuButtonText($text)) {
+            if (in_array($stateName, $registrationStates, true)) {
+                // Ro'yxatdan o'tish hali tugallanmagan — bosilgan tugmani e'tiborsiz qoldirib,
+                // xuddi shu bosqichni (holatni o'zgartirmasdan) qaytadan so'raymiz, boshidan emas.
+                match ($stateName) {
+                    'reg_wait_name' => $this->api->sendMessage($chatId, Texts::welcome()),
+                    'reg_wait_position' => $this->api->sendMessage($chatId, Texts::askPosition()),
+                    'reg_wait_phone' => $this->askForPhone($chatId, $user),
+                    default => null,
+                };
+
+                return;
+            }
+
+            UserState::clear($user->telegram_id);
+            $stateName = '';
         }
 
         switch ($stateName) {
@@ -515,9 +567,21 @@ class BotHandler
         return $rows;
     }
 
-    /** Rol/guruh o'zgarganda foydalanuvchiga yangilangan menyu (tugmalar) darhol yuboriladi — /start kutish shart emas. */
+    /**
+     * Rol/guruh o'zgarganda foydalanuvchiga yangilangan menyu (tugmalar) darhol yuboriladi — /start kutish shart emas.
+     * MUHIM: agar foydalanuvchi hali ro'yxatdan to'liq o'tmagan bo'lsa (masalan, admin uni guruhga
+     * qo'shib qo'ygan, lekin u /start'ni oxirigacha bosmagan), tugmalar YUBORILMAYDI — aks holda u
+     * hali ism/lavozim/telefon so'ralayotgan holatda ekan, tugma matni shu maydonlarga yozilib qolar edi
+     * (masalan «👥 Guruh»ni bosishi ismi sifatida saqlanib ketishi mumkin edi).
+     */
     public function notifyMenuRefresh(User $user, Group $group, string $text): void
     {
+        if (!$user->isRegistered()) {
+            $this->api->sendMessage($user->telegram_id, $text . "\n\n⚠️ Ro'yxatdan oxirigacha o'tish uchun /start yozing.");
+
+            return;
+        }
+
         $this->api->sendMessage($user->telegram_id, $text, null, $this->mainMenuKeyboard($user, $group));
     }
 
@@ -528,6 +592,12 @@ class BotHandler
      */
     public function notifyUserMenu(User $user, string $text): void
     {
+        if (!$user->isRegistered()) {
+            $this->api->sendMessage($user->telegram_id, $text . "\n\n⚠️ Ro'yxatdan oxirigacha o'tish uchun /start yozing.");
+
+            return;
+        }
+
         $this->api->sendMessage($user->telegram_id, $text, null, $this->mainMenuKeyboard($user, $this->currentGroup($user)));
     }
 
@@ -896,14 +966,18 @@ class BotHandler
         }
 
         UserState::set($user->telegram_id, 'meeting_wait_guest_name', ['meeting_id' => $meetingId]);
-        $this->api->sendMessage($chatId, "🎫 Mehmonning F.I.Sh.ini yozing (ro'yxatdan o'tmagan, boshqa jamoa/guruhdan bo'lishi mumkin):");
+        $this->api->sendMessage(
+            $chatId,
+            "🎫 Mehmonning F.I.Sh.ini yozing (ro'yxatdan o'tmagan, boshqa jamoa/guruhdan bo'lishi mumkin):",
+            $this->cancelKeyboard()
+        );
     }
 
     private function handleGuestNameInput(int $chatId, User $user, UserState $state, string $text): void
     {
         $fullName = trim($text);
         if ($fullName === '') {
-            $this->api->sendMessage($chatId, "Ism bo'sh bo'lmasligi kerak. Qaytadan yozing:");
+            $this->api->sendMessage($chatId, "Ism bo'sh bo'lmasligi kerak. Qaytadan yozing:", $this->cancelKeyboard());
 
             return;
         }
@@ -1008,14 +1082,14 @@ class BotHandler
         }
 
         UserState::set($user->telegram_id, 'meeting_edit_topic', ['meeting_id' => $meetingId]);
-        $this->api->sendMessage($chatId, "Yangi mavzuni yozing (hozirgi: «{$meeting->topic}»):");
+        $this->api->sendMessage($chatId, "Yangi mavzuni yozing (hozirgi: «{$meeting->topic}»):", $this->cancelKeyboard());
     }
 
     private function handleEditTopicInput(int $chatId, User $user, UserState $state, string $text): void
     {
         $text = trim($text);
         if ($text === '') {
-            $this->api->sendMessage($chatId, "Mavzu bo'sh bo'lmasligi kerak. Qaytadan yozing:");
+            $this->api->sendMessage($chatId, "Mavzu bo'sh bo'lmasligi kerak. Qaytadan yozing:", $this->cancelKeyboard());
 
             return;
         }
@@ -1044,7 +1118,8 @@ class BotHandler
         UserState::set($user->telegram_id, 'meeting_edit_date', ['meeting_id' => $meetingId]);
         $this->api->sendMessage(
             $chatId,
-            "Yangi sana va vaqtni yozing (hozirgi: " . Texts::formatDate($meeting->meeting_at) . ").\n" . Texts::askMeetingDate()
+            "Yangi sana va vaqtni yozing (hozirgi: " . Texts::formatDate($meeting->meeting_at) . ").\n" . Texts::askMeetingDate(),
+            $this->cancelKeyboard()
         );
     }
 
@@ -1052,7 +1127,7 @@ class BotHandler
     {
         $dt = $this->parseMeetingDate($text);
         if (!$dt) {
-            $this->api->sendMessage($chatId, Texts::invalidDate());
+            $this->api->sendMessage($chatId, Texts::invalidDate(), $this->cancelKeyboard());
 
             return;
         }
@@ -1083,6 +1158,7 @@ class BotHandler
                 ['text' => 'Oflayn', 'callback_data' => "efs:{$meetingId}:offline"],
                 ['text' => 'Onlayn', 'callback_data' => "efs:{$meetingId}:online"],
             ],
+            ...$this->cancelKeyboard(),
         ]);
     }
 
@@ -1115,7 +1191,8 @@ class BotHandler
         $word = $meeting->group->isUmumiy() ? 'trening' : 'uchrashuv';
         $this->api->sendMessage(
             $chatId,
-            "«{$meeting->topic}» {$word}ini bekor qilish sababini yozing:"
+            "«{$meeting->topic}» {$word}ini bekor qilish sababini yozing:",
+            $this->cancelKeyboard()
         );
     }
 
@@ -1123,7 +1200,7 @@ class BotHandler
     {
         $text = trim($text);
         if ($text === '') {
-            $this->api->sendMessage($chatId, "Sababni bo'sh qoldirib bo'lmaydi. Qaytadan yozing:");
+            $this->api->sendMessage($chatId, "Sababni bo'sh qoldirib bo'lmaydi. Qaytadan yozing:", $this->cancelKeyboard());
 
             return;
         }
@@ -1196,7 +1273,7 @@ class BotHandler
         }
 
         UserState::set($user->telegram_id, 'meeting_wait_topic', ['group_id' => $group->id]);
-        $this->api->sendMessage($chatId, Texts::askMeetingTopic($group->isUmumiy()));
+        $this->api->sendMessage($chatId, Texts::askMeetingTopic($group->isUmumiy()), $this->cancelKeyboard());
     }
 
     /**
@@ -1225,7 +1302,7 @@ class BotHandler
     {
         $dt = $this->parseMeetingDate($text);
         if (!$dt) {
-            $this->api->sendMessage($chatId, Texts::invalidDate());
+            $this->api->sendMessage($chatId, Texts::invalidDate(), $this->cancelKeyboard());
 
             return;
         }
@@ -1241,6 +1318,7 @@ class BotHandler
         $isTrening = Group::findOne($context['group_id'] ?? null)?->isUmumiy() ?? false;
         $this->api->sendMessage($chatId, Texts::askMeetingFormat($isTrening), [
             [['text' => 'Oflayn', 'callback_data' => 'fmt:offline'], ['text' => 'Onlayn', 'callback_data' => 'fmt:online']],
+            ...$this->cancelKeyboard(),
         ]);
     }
 
@@ -1268,6 +1346,7 @@ class BotHandler
             $rows[] = $row;
         }
         $rows[] = [['text' => "✏️ Boshqa sana (qo'lda yozish)", 'callback_data' => 'day:custom']];
+        $rows[] = $this->cancelKeyboard()[0];
 
         return $rows;
     }
@@ -1288,6 +1367,7 @@ class BotHandler
             $rows[] = $row;
         }
         $rows[] = [['text' => "✏️ Boshqa vaqt (qo'lda yozish)", 'callback_data' => 'time:custom']];
+        $rows[] = $this->cancelKeyboard()[0];
 
         return $rows;
     }
@@ -1298,7 +1378,7 @@ class BotHandler
 
         if ($value === 'custom') {
             UserState::set($user->telegram_id, 'meeting_wait_date', $context);
-            $this->api->sendMessage($chatId, Texts::askMeetingDate());
+            $this->api->sendMessage($chatId, Texts::askMeetingDate(), $this->cancelKeyboard());
 
             return;
         }
@@ -1314,7 +1394,7 @@ class BotHandler
 
         if ($value === 'custom') {
             UserState::set($user->telegram_id, 'meeting_wait_time_custom', $context);
-            $this->api->sendMessage($chatId, "Soatni yozing (masalan 14:00):");
+            $this->api->sendMessage($chatId, "Soatni yozing (masalan 14:00):", $this->cancelKeyboard());
 
             return;
         }
@@ -1330,13 +1410,13 @@ class BotHandler
     private function handleCustomTimeInput(int $chatId, User $user, UserState $state, string $text): void
     {
         if (!preg_match('/^(\d{1,2})[:\s.](\d{1,2})$/u', trim($text), $m)) {
-            $this->api->sendMessage($chatId, "❌ Noto'g'ri format. Masalan: 14:00. Qaytadan kiriting:");
+            $this->api->sendMessage($chatId, "❌ Noto'g'ri format. Masalan: 14:00. Qaytadan kiriting:", $this->cancelKeyboard());
 
             return;
         }
         [, $hour, $minute] = $m;
         if ((int) $hour > 23 || (int) $minute > 59) {
-            $this->api->sendMessage($chatId, "❌ Noto'g'ri vaqt. Masalan: 14:00. Qaytadan kiriting:");
+            $this->api->sendMessage($chatId, "❌ Noto'g'ri vaqt. Masalan: 14:00. Qaytadan kiriting:", $this->cancelKeyboard());
 
             return;
         }
@@ -1390,6 +1470,22 @@ class BotHandler
         }
 
         if ($data === 'noop') {
+            return;
+        }
+
+        if ($data === 'cancelflow') {
+            $meetingId = $state?->getContextData()['meeting_id'] ?? null;
+            UserState::clear($user->telegram_id);
+
+            if ($meetingId !== null) {
+                $this->api->sendMessage($chatId, "❌ Bekor qilindi.");
+                $this->openMeetingCard($chatId, $user, (int) $meetingId);
+
+                return;
+            }
+
+            $this->sendMainMenu($chatId, $user, $user->is_observer ? null : $this->currentGroup($user), "❌ Bekor qilindi.");
+
             return;
         }
 
