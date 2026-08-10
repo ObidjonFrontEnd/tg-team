@@ -47,6 +47,7 @@ class AdminController extends Controller
     {
         $users = User::find()->orderBy(['id' => SORT_DESC])->all();
         $deleteUserUrl = Url::to(['admin/user-delete']);
+        $toggleObserverUrl = Url::to(['admin/user-toggle-observer']);
 
         $rows = '';
         foreach ($users as $u) {
@@ -54,6 +55,14 @@ class AdminController extends Controller
             $nameEsc = htmlspecialchars($u->full_name, ENT_QUOTES);
             $editUrl = Url::to(['admin/user-edit', 'id' => $u->id]);
             $editBtn = '<a href="' . $editUrl . '" style="font-size:12px;padding:3px 10px;border:1px solid #2c3e50;color:#2c3e50;border-radius:10px;text-decoration:none;">✏️ Tahrirlash</a>';
+            $observerBtnLabel = $u->is_observer ? '🔭 Kuzatuvchidan chiqarish' : '🔭 Kuzatuvchi qilish';
+            $observerBtnStyle = $u->is_observer
+                ? 'border:1px solid #8e44ad;background:#8e44ad;color:#fff;'
+                : 'border:1px solid #8e44ad;background:#fff;color:#8e44ad;';
+            $observerBtn = "<form method=\"post\" action=\"{$toggleObserverUrl}\" style=\"display:inline;\">"
+                . "<input type=\"hidden\" name=\"user_id\" value=\"{$u->id}\">"
+                . "<button type=\"submit\" style=\"font-size:12px;padding:3px 10px;{$observerBtnStyle}border-radius:10px;cursor:pointer;\">{$observerBtnLabel}</button>"
+                . '</form>';
             $deleteBtn = "<form method=\"post\" action=\"{$deleteUserUrl}\" style=\"display:inline;\" onsubmit=\"return confirm('«{$nameEsc}»ni butunlay o\\'chirmoqchimisiz?');\">"
                 . "<input type=\"hidden\" name=\"user_id\" value=\"{$u->id}\">"
                 . '<button type="submit" style="font-size:12px;padding:3px 10px;border:1px solid #c0392b;background:#fff;color:#c0392b;border-radius:10px;cursor:pointer;">🗑 O\'chirish</button>'
@@ -67,14 +76,14 @@ class AdminController extends Controller
                 . '<td>' . htmlspecialchars((string) $u->telegram_username) . '</td>'
                 . '<td>' . htmlspecialchars($groupNames) . '</td>'
                 . '<td>' . htmlspecialchars((string) $u->created_at) . '</td>'
-                . '<td style="white-space:nowrap;">' . $editBtn . ' ' . $deleteBtn . '</td>'
+                . '<td style="white-space:nowrap;">' . $editBtn . ' ' . $observerBtn . ' ' . $deleteBtn . '</td>'
                 . '</tr>';
         }
 
         $body = $this->table(
             ['ID', 'F.I.Sh.', 'Lavozim', 'Telefon', 'Telegram ID', 'Username', 'Guruhlar', 'Ro\'yxatdan o\'tgan', ''],
             $rows,
-            "Jami: " . count($users)
+            "Jami: " . count($users) . ' <span style="color:#aaa;">(🔭 Kuzatuvchi — hech qanday guruhga a\'zo bo\'lmasdan barcha guruhlar statistikasini ko\'ra oladi)</span>'
         );
 
         return $this->page('Foydalanuvchilar', 'users', $body);
@@ -271,6 +280,25 @@ HTML;
 HTML;
 
         return $this->page("«{$user->full_name}»ni tahrirlash", 'users', $form);
+    }
+
+    public function actionUserToggleObserver(): Response
+    {
+        if (Yii::$app->request->isPost) {
+            $user = User::findOne((int) Yii::$app->request->post('user_id'));
+            if ($user !== null) {
+                $user->is_observer = !$user->is_observer;
+                $user->save(false);
+                Yii::$app->session->setFlash(
+                    'success',
+                    $user->is_observer
+                        ? "«{$user->full_name}» endi Kuzatuvchi."
+                        : "«{$user->full_name}» Kuzatuvchilikdan chiqarildi."
+                );
+            }
+        }
+
+        return $this->redirect(['admin/users']);
     }
 
     public function actionUserDelete(): Response

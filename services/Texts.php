@@ -35,7 +35,9 @@ class Texts
 
     public static function registrationDone(string $fullName): string
     {
-        return "✅ Ro'yxatdan muvaffaqiyatli o'tdingiz, {$fullName}!\n\nQuyidagi menyudan foydalanishingiz mumkin.";
+        return "✅ Ro'yxatdan muvaffaqiyatli o'tdingiz, {$fullName}!\n\n"
+            . "Quyidagi menyudan foydalanishingiz mumkin. "
+            . "Botdan telefoningizdagi Telegram orqali ham, kompyuteringizdagi (PC) Telegram orqali ham bemalol foydalanishingiz mumkin — hisobingiz bir xil.";
     }
 
     public static function mainMenuHint(): string

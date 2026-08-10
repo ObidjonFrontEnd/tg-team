@@ -29,6 +29,7 @@ class BotHandler
     private const BTN_MARK_ATTENDANCE = '✅ Davomat';
     private const BTN_GROUP_MEMBERS = '👥 Guruh';
     private const BTN_SWITCH_GROUP = '🔀 Guruhni almashtirish';
+    private const BTN_STATS = '📊 Statistika';
 
     /** Regламент: uchrashuv kamida shuncha soat oldin e'lon qilinishi kerak. */
     private const MIN_ADVANCE_HOURS = 12;
@@ -111,28 +112,32 @@ class BotHandler
      */
     private function mainMenuKeyboard(User $user, ?Group $group): array
     {
-        if ($group === null) {
-            return [];
+        $rows = [];
+
+        if ($group !== null) {
+            $isModerator = $group->moderator_user_id === $user->id;
+            $isKotib = !$isModerator && $this->isKotibInGroup($group, $user);
+
+            $rows[] = [self::BTN_UPCOMING, self::BTN_GROUP_MEMBERS];
+
+            $row2 = [];
+            if ($isModerator) {
+                $row2[] = self::BTN_CREATE_MEETING;
+            }
+            if ($isModerator || $isKotib) {
+                $row2[] = self::BTN_MARK_ATTENDANCE;
+            }
+            if ($row2) {
+                $rows[] = $row2;
+            }
+
+            if (count($this->userGroups($user)) > 1) {
+                $rows[] = [self::BTN_SWITCH_GROUP];
+            }
         }
 
-        $isModerator = $group->moderator_user_id === $user->id;
-        $isKotib = !$isModerator && $this->isKotibInGroup($group, $user);
-
-        $rows = [[self::BTN_UPCOMING, self::BTN_GROUP_MEMBERS]];
-
-        $row2 = [];
-        if ($isModerator) {
-            $row2[] = self::BTN_CREATE_MEETING;
-        }
-        if ($isModerator || $isKotib) {
-            $row2[] = self::BTN_MARK_ATTENDANCE;
-        }
-        if ($row2) {
-            $rows[] = $row2;
-        }
-
-        if (count($this->userGroups($user)) > 1) {
-            $rows[] = [self::BTN_SWITCH_GROUP];
+        if ($user->is_observer) {
+            $rows[] = [self::BTN_STATS];
         }
 
         return $rows;
@@ -336,6 +341,10 @@ class BotHandler
                 $this->showGroupSwitcher($chatId, $user);
                 break;
 
+            case self::BTN_STATS:
+                $this->showObserverGroupList($chatId, $user);
+                break;
+
             default:
                 $this->sendMainMenu($chatId, $user, $group, Texts::mainMenuHint());
         }
@@ -511,6 +520,83 @@ class BotHandler
         GroupMemberRole::toggle($groupId, $memberId, $roleId);
 
         $this->api->editMessageReplyMarkup($chatId, $messageId, $this->memberRoleKeyboard($groupId, $memberId));
+    }
+
+    // ---------------------------------------------------------- observer
+
+    /**
+     * Kuzatuvchi hech qanday guruhga a'zo emas, shuning uchun barcha guruhlar ro'yxatidan
+     * birini tanlab, o'sha guruhning davomat statistikasini ko'radi.
+     */
+    private function showObserverGroupList(int $chatId, User $user): void
+    {
+        if (!$user->is_observer) {
+            return;
+        }
+
+        $groups = Group::find()->orderBy(['name' => SORT_ASC])->all();
+        if (!$groups) {
+            $this->api->sendMessage($chatId, "Hozircha guruhlar yo'q.");
+
+            return;
+        }
+
+        $rows = [];
+        foreach ($groups as $group) {
+            $rows[] = [['text' => $group->name, 'callback_data' => "ogr:{$group->id}"]];
+        }
+
+        $this->api->sendMessage($chatId, "📊 Statistikasini ko'rmoqchi bo'lgan guruhni tanlang:", $rows);
+    }
+
+    /** Guruh a'zolari bo'yicha: kim nechta uchrashuvga keldi, kim nechta marta kelmadi. */
+    private function showGroupAttendanceStats(int $chatId, User $user, int $groupId): void
+    {
+        if (!$user->is_observer) {
+            return;
+        }
+
+        $group = Group::findOne($groupId);
+        if ($group === null) {
+            return;
+        }
+
+        $members = $group->getMembers()->orderBy(['full_name' => SORT_ASC])->all();
+        if (!$members) {
+            $this->api->sendMessage($chatId, "«{$group->name}» guruhida hali a'zolar yo'q.");
+
+            return;
+        }
+
+        $counts = Attendance::find()
+            ->alias('a')
+            ->select(['a.user_id', 'a.status', 'cnt' => 'COUNT(*)'])
+            ->innerJoin(['m' => Meeting::tableName()], 'm.id = a.meeting_id')
+            ->where(['m.group_id' => $groupId])
+            ->groupBy(['a.user_id', 'a.status'])
+            ->asArray()
+            ->all();
+
+        $stats = [];
+        foreach ($counts as $row) {
+            $uid = (int) $row['user_id'];
+            $stats[$uid] ??= ['present' => 0, 'absent' => 0, 'excused' => 0];
+            $stats[$uid][$row['status']] = (int) $row['cnt'];
+        }
+
+        $lines = [];
+        foreach ($members as $member) {
+            $s = $stats[$member->id] ?? ['present' => 0, 'absent' => 0, 'excused' => 0];
+            $line = "• <b>{$member->full_name}</b> — ✅ {$s['present']} keldi / ❌ {$s['absent']} kelmadi";
+            if ($s['excused'] > 0) {
+                $line .= " / ⚠️ {$s['excused']} sababli";
+            }
+            $lines[] = $line;
+        }
+
+        $text = "📊 <b>{$group->name} — davomat statistikasi</b>\n\n" . implode("\n", $lines);
+
+        $this->api->sendMessage($chatId, $text, [[['text' => '⬅️ Guruhlar ro\'yxati', 'callback_data' => 'ogl']]]);
     }
 
     // ------------------------------------------------------------ meetings
@@ -1253,6 +1339,18 @@ class BotHandler
         if (str_starts_with($data, 'gvb:')) {
             $groupId = (int) substr($data, 4);
             $this->showGroupMembers($chatId, $user, Group::findOne($groupId));
+
+            return;
+        }
+
+        if (str_starts_with($data, 'ogr:')) {
+            $this->showGroupAttendanceStats($chatId, $user, (int) substr($data, 4));
+
+            return;
+        }
+
+        if ($data === 'ogl') {
+            $this->showObserverGroupList($chatId, $user);
         }
     }
 

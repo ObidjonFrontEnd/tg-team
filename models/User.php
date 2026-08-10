@@ -15,6 +15,7 @@ use yii\db\ActiveQuery;
  * @property string|null $position
  * @property string|null $phone
  * @property int|null $active_group_id
+ * @property bool $is_observer
  * @property string $created_at
  */
 class User extends ActiveRecord
@@ -31,6 +32,7 @@ class User extends ActiveRecord
             [['telegram_id', 'active_group_id'], 'integer'],
             [['telegram_username', 'full_name', 'position'], 'string', 'max' => 255],
             [['phone'], 'string', 'max' => 32],
+            [['is_observer'], 'boolean'],
         ];
     }
 
