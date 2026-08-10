@@ -580,6 +580,69 @@ HTML;
         return $this->page('Migratsiyalar', 'migrate', $body);
     }
 
+    public function actionWebhook(): Response
+    {
+        $info = Yii::$app->telegram->getWebhookInfo();
+        $result = $info['result'] ?? [];
+
+        $currentUrl = (string) ($result['url'] ?? '');
+        $suggestedUrl = Yii::$app->request->hostInfo . '/bot/webhook';
+
+        $rows = [
+            'Hozirgi webhook URL' => $currentUrl !== '' ? htmlspecialchars($currentUrl) : '<span style="color:#c0392b;">o\'rnatilmagan</span>',
+            'Navbatdagi apdeytlar (pending_update_count)' => (string) ($result['pending_update_count'] ?? 0),
+            'Oxirgi yetkazib berish xatosi' => !empty($result['last_error_message'])
+                ? '<span style="color:#c0392b;">' . htmlspecialchars($result['last_error_message']) . '</span> ('
+                    . date('Y-m-d H:i:s', (int) ($result['last_error_date'] ?? 0)) . ')'
+                : '<span style="color:#1e8449;">yo\'q</span>',
+            'IP manzil' => htmlspecialchars((string) ($result['ip_address'] ?? '—')),
+        ];
+        $infoRows = '';
+        foreach ($rows as $label => $value) {
+            $infoRows .= '<tr><td style="padding:6px 10px;color:#666;">' . htmlspecialchars($label) . '</td><td style="padding:6px 10px;"><b>' . $value . '</b></td></tr>';
+        }
+
+        $matchesSuggested = $currentUrl === $suggestedUrl;
+        $matchNote = $matchesSuggested
+            ? '<p style="color:#1e8449;">✅ Hozirgi webhook shu serverga (' . htmlspecialchars($suggestedUrl) . ') o\'rnatilgan.</p>'
+            : '<p style="color:#b8860b;">⚠️ Hozirgi webhook shu serverga mos kelmayapti. Pastdagi tugma bilan «' . htmlspecialchars($suggestedUrl) . '» ga o\'rnating.</p>';
+
+        $setWebhookUrl = Url::to(['admin/webhook-set']);
+        $suggestedUrlEsc = htmlspecialchars($suggestedUrl, ENT_QUOTES);
+        $form = <<<HTML
+<div style="background:#fff;padding:14px 18px;border-radius:6px;max-width:640px;">
+<table style="border-collapse:collapse;">{$infoRows}</table>
+{$matchNote}
+<form method="post" action="{$setWebhookUrl}" style="margin-top:14px;">
+<label>Webhook URL<br>
+<input type="text" name="url" value="{$suggestedUrlEsc}" required style="width:100%;padding:8px;margin-top:4px;box-sizing:border-box;">
+</label>
+<button type="submit" style="margin-top:10px;padding:10px 20px;background:#2c3e50;color:#fff;border:none;border-radius:4px;cursor:pointer;">🔌 Webhookni faollashtirish</button>
+</form>
+</div>
+HTML;
+
+        return $this->page('Webhook', 'webhook', $form);
+    }
+
+    public function actionWebhookSet(): Response
+    {
+        if (Yii::$app->request->isPost) {
+            $url = trim((string) Yii::$app->request->post('url'));
+            if ($url !== '') {
+                $result = Yii::$app->telegram->setWebhook($url);
+                Yii::$app->session->setFlash(
+                    !empty($result['ok']) ? 'success' : 'error',
+                    !empty($result['ok'])
+                        ? "Webhook o'rnatildi: {$url}"
+                        : 'Xatolik: ' . htmlspecialchars((string) ($result['description'] ?? 'noma\'lum xatolik'))
+                );
+            }
+        }
+
+        return $this->redirect(['admin/webhook']);
+    }
+
     // ------------------------------------------------------------- helpers
 
     private function renderFlash(): string
@@ -620,6 +683,7 @@ HTML;
             'meetings' => ['Uchrashuvlar', 'admin/meetings'],
             'attendance' => ['Davomat', 'admin/attendance'],
             'migrate' => ['Migratsiyalar', 'admin/migrate'],
+            'webhook' => ['Webhook', 'admin/webhook'],
         ];
 
         $navHtml = '';
