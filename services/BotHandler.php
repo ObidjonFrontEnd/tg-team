@@ -32,8 +32,6 @@ class BotHandler
     private const BTN_MEETING_HISTORY = '🕘 Tarix';
     private const BTN_STATS = '📊 Statistika';
 
-    /** Regламент: uchrashuv kamida shuncha soat oldin e'lon qilinishi kerak. */
-    private const MIN_ADVANCE_HOURS = 12;
     /** Davomatni belgilash faqat uchrashuv boshlanganidan keyin va shuncha soat ichida ochiq. */
     private const ATTENDANCE_WINDOW_HOURS = 12;
     /** Uchrashuv boshlanganidan keyin kamida shuncha soat o'tmaguncha «Yakunlash» tugmasi ishlamaydi. */
@@ -296,7 +294,7 @@ class BotHandler
 
             case 'meeting_wait_topic':
                 UserState::set($user->telegram_id, 'meeting_wait_day', $state->getContextData() + ['topic' => $text]);
-                $this->api->sendMessage($chatId, "Uchrashuv sanasini tanlang:", $this->dayPickerKeyboard($user));
+                $this->api->sendMessage($chatId, "Uchrashuv sanasini tanlang:", $this->dayPickerKeyboard());
 
                 return;
 
@@ -1167,16 +1165,6 @@ class BotHandler
         $this->finishDateSelection($chatId, $user, $state->getContextData(), $dt);
     }
 
-    /** Sinov uchun ruxsat berilgan foydalanuvchilarga 12 soatlik qoida qo'llanmaydi. */
-    private function isMeetingTimeAllowed(\DateTime $dt, User $user): bool
-    {
-        if ($this->isTestBypassUser($user)) {
-            return true;
-        }
-
-        return $dt >= new \DateTime('+' . self::MIN_ADVANCE_HOURS . ' hours');
-    }
-
     private function proceedToFormatStep(int $chatId, User $user, array $context): void
     {
         unset($context['day']);
@@ -1189,31 +1177,16 @@ class BotHandler
 
     private function finishDateSelection(int $chatId, User $user, array $context, \DateTime $dt): void
     {
-        if (!$this->isMeetingTimeAllowed($dt, $user)) {
-            UserState::set($user->telegram_id, 'meeting_wait_day', $context);
-            $this->api->sendMessage(
-                $chatId,
-                Texts::meetingTooSoon(self::MIN_ADVANCE_HOURS) . "\n\nSanani qaytadan tanlang:",
-                $this->dayPickerKeyboard($user)
-            );
-
-            return;
-        }
-
         $context['meeting_at'] = $dt->format('Y-m-d H:i:s');
         $this->proceedToFormatStep($chatId, $user, $context);
     }
 
-    /**
-     * Kalendar: keyingi 14 kun tugma sifatida (2 tadan qatorda), + qo'lda yozish imkoniyati.
-     * Sinov foydalanuvchisi uchun bugundan boshlanadi, qolganlar uchun ertadan (12soatlik qoidaga yaqinroq mos kelsin uchun).
-     */
-    private function dayPickerKeyboard(User $user): array
+    /** Kalendar: bugundan boshlab keyingi 14 kun tugma sifatida (2 tadan qatorda), + qo'lda yozish imkoniyati. */
+    private function dayPickerKeyboard(): array
     {
-        $startOffset = $this->isTestBypassUser($user) ? 0 : 1;
         $rows = [];
         $row = [];
-        for ($i = $startOffset; $i < $startOffset + 14; $i++) {
+        for ($i = 0; $i < 14; $i++) {
             $d = (new \DateTime())->modify("+{$i} days");
             $label = self::UZ_WEEKDAYS[(int) $d->format('w')] . ', ' . (int) $d->format('j') . '-' . self::UZ_MONTHS[(int) $d->format('n')];
             $row[] = ['text' => $label, 'callback_data' => 'day:' . $d->format('Y-m-d')];

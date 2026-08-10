@@ -42,7 +42,7 @@ Bir nechta odam bir vaqtda Kuzatuvchi bo'lishi mumkin.
 - **Moderator** — 4 tugma: 📅 Uchrashuvlar, 👥 Guruh, ➕ Yangi uchrashuv, ✅ Davomat
 
 **➕ Yangi uchrashuv** — 3 qadam: mavzu → sana/vaqt → format → **shu zahoti yaratiladi va kanalga e'lon qilinadi**.
-- Sana/vaqt endi **kalendar orqali** tanlanadi (keyingi 14 kun tugma sifatida, so'ng soat tugmalari) — erkin matn yozish shart emas, lekin «✏️ Boshqa sana/vaqt» tugmasi bilan qo'lda ham yozish mumkin (turli formatlarni tushunadi: `2026-8-8 16 00`, `2026-08-08 16:00` va h.k.).
+- Sana/vaqt endi **kalendar orqali** tanlanadi (bugundan boshlab keyingi 14 kun tugma sifatida, so'ng soat tugmalari) — erkin matn yozish shart emas, lekin «✏️ Boshqa sana/vaqt» tugmasi bilan qo'lda ham yozish mumkin (turli formatlarni tushunadi: `2026-8-8 16 00`, `2026-08-08 16:00` va h.k.). Kamida qancha vaqt oldin yaratish kerakligi bo'yicha cheklov **yo'q** — hoziroq boshlanadigan uchrashuv ham yaratsa bo'ladi.
 - Ishtirokchilar va rollar bu yerda tanlanmaydi — guruhning barcha a'zolari avtomatik qo'shiladi, rollari esa «👥 Guruh» bo'limidagi shablondan olinadi (hech narsa belgilanmagan bo'lsa — «Ishtirokchi»).
 - Uchrashuvni Moderator **bekor qilishi** mumkin (📅 Uchrashuvlar bo'limi ochilganda pastda bekor qilish ro'yxati chiqadi) — bekor qilingan uchrashuv bazada `cancelled` holatda saqlanadi, endi hech qayerda faol ko'rsatilmaydi.
 
@@ -52,7 +52,7 @@ Bir nechta odam bir vaqtda Kuzatuvchi bo'lishi mumkin.
 
 ### Sinov rejimi (vaqt cheklovlarisiz)
 
-`.env` dagi `TEST_BYPASS_TELEGRAM_IDS` ga telegram_id yozilgan foydalanuvchilar uchun 12 soatlik qoidalar ishlamaydi: ular istalgan kunni (bugundan boshlab) tanlashi va istalgan vaqtda Davomatni belgilashi mumkin — sinov/demo uchun qulay. Productionda bu qatorni bo'sh qoldiring.
+`.env` dagi `TEST_BYPASS_TELEGRAM_IDS` ga telegram_id yozilgan foydalanuvchilar uchun uchrashuvni boshlagandan keyin kamida 1 soat o'tmasdan ham «🏁 Yakunlash» tugmasi ishlaydi (odatda shu vaqt o'tmaguncha yakunlab bo'lmaydi) — sinov/demo uchun qulay. Productionda bu qatorni bo'sh qoldiring.
 
 ### Migratsiyalarni qo'llash (ikkinchi, token orqali usul)
 

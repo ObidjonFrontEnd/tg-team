@@ -77,12 +77,6 @@ class Texts
             . "Masalan: 2026-08-10 15:00. Qaytadan kiriting:";
     }
 
-    public static function meetingTooSoon(int $minHours): string
-    {
-        return "❌ Reglament bo'yicha uchrashuv kamida {$minHours} soat oldin belgilanishi kerak. "
-            . "Iltimos, kechroq vaqt kiriting:";
-    }
-
     public static function askMeetingFormat(): string
     {
         return "Uchrashuv formatini tanlang:";
