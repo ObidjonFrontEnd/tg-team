@@ -447,6 +447,13 @@ HTML;
                 $bot = new BotHandler(Yii::$app->telegram);
                 $member = User::findOne($userId);
                 if ($member !== null) {
+                    // MUHIM: ko'rsatiladigan menyu shu guruh uchun bo'lgani sababli, foydalanuvchining
+                    // HAQIQIY faol guruhini ham shu guruhga o'tkazamiz — aks holda ekranda "Umumiy" tugmalari
+                    // ko'rinadi-yu, lekin active_group_id eski guruhda qolib ketadi va "Yangi trening" kabi
+                    // amallar "faqat Moderator" xatosini berib turadi (ko'rinish va haqiqiy holat mos kelmaydi).
+                    $member->active_group_id = $group->id;
+                    $member->save(false);
+
                     $promotedText = match ($member->language) {
                         User::LANG_RU => "👑 Вы назначены Модератором группы «{$group->name}». Новое меню:",
                         User::LANG_UZ_CYRL => "👑 Сиз «{$group->name}» гуруҳининг Модератори этиб тайинландингиз. Янги меню:",
@@ -457,12 +464,21 @@ HTML;
                 if ($previousModeratorId && $previousModeratorId !== $userId) {
                     $previousModerator = User::findOne($previousModeratorId);
                     if ($previousModerator !== null) {
+                        // Agar bu «Umumiy» guruh bo'lsa — endi u faqat Moderatoriga ko'rinadi, demak
+                        // avvalgi Moderator uchun bu guruh endi YASHIRIN. Agar uning faol guruhi aynan
+                        // shu bo'lgan bo'lsa — active_group_id'ni tozalaymiz, currentGroup() o'zi haqiqiy
+                        // (ko'rinadigan) guruhni tanlab oladi; aks holda u "yo'q" guruh bilan qolib ketardi.
+                        if ($group->isUmumiy() && $previousModerator->active_group_id === $group->id) {
+                            $previousModerator->active_group_id = null;
+                            $previousModerator->save(false);
+                        }
+
                         $demotedText = match ($previousModerator->language) {
                             User::LANG_RU => "ℹ️ Теперь Модератор группы «{$group->name}» — другой человек. Новое меню:",
                             User::LANG_UZ_CYRL => "ℹ️ Энди «{$group->name}» гуруҳининг Модератори бошқа шахс. Янги меню:",
                             default => "ℹ️ Endi «{$group->name}» guruhining Moderatori boshqa shaxs. Yangi menyu:",
                         };
-                        $bot->notifyMenuRefresh($previousModerator, $group, $demotedText);
+                        $bot->notifyUserMenu($previousModerator, $demotedText);
                     }
                 }
             }
