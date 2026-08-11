@@ -71,7 +71,7 @@ class AdminController extends Controller
                 . '<button type="submit" style="font-size:12px;padding:3px 10px;border:1px solid #c0392b;background:#fff;color:#c0392b;border-radius:10px;cursor:pointer;">🗑 O\'chirish</button>'
                 . '</form>';
             $nameHtml = htmlspecialchars($u->full_name)
-                . ($u->is_guest ? ' <span style="background:#8d6e63;color:#fff;padding:1px 6px;border-radius:8px;font-size:11px;">🎫 Mehmon</span>' : '');
+                . ($u->is_guest ? ' <span style="background:#8d6e63;color:#fff;padding:1px 6px;border-radius:8px;font-size:11px;">👤 Mehmon</span>' : '');
             $rowAction = $u->is_guest ? $editBtn . ' ' . $deleteBtn : $editBtn . ' ' . $observerBtn . ' ' . $deleteBtn;
 
             $rows .= '<tr>'
@@ -90,7 +90,7 @@ class AdminController extends Controller
         $body = $this->table(
             ['ID', 'F.I.Sh.', 'Lavozim', 'Telefon', 'Telegram ID', 'Username', 'Guruhlar', 'Ro\'yxatdan o\'tgan', ''],
             $rows,
-            "Jami: " . count($users) . ' <span style="color:#aaa;">(🔭 Kuzatuvchi — hech qanday guruhga a\'zo bo\'lmasdan barcha guruhlar statistikasini ko\'ra oladi; 🎫 Mehmon — ro\'yxatdan o\'tmagan, faqat bitta uchrashuvga qo\'shilgan odam)</span>'
+            "Jami: " . count($users) . ' <span style="color:#aaa;">(🔭 Kuzatuvchi — hech qanday guruhga a\'zo bo\'lmasdan barcha guruhlar statistikasini ko\'ra oladi; 👤 Mehmon — ro\'yxatdan o\'tmagan, faqat bitta uchrashuvga qo\'shilgan odam)</span>'
         );
 
         return $this->page('Foydalanuvchilar', 'users', $body);
@@ -186,13 +186,33 @@ HTML;
 
                 $member = User::findOne($userId);
                 if ($member !== null) {
-                    // Yangi qo'shilgan guruh o'sha zahoti "faol" bo'ladi — foydalanuvchi shu haqda xabar oladi,
-                    // shu guruh menyusini ko'radi va keyingi safar botga kirganda ham o'sha bilan davom etadi.
-                    $member->active_group_id = $group->id;
-                    $member->save(false);
+                    // MUHIM: agar foydalanuvchida hali "faol" guruh bo'lmasa (birinchi guruhi) — shu zahoti
+                    // shu guruh "faol" bo'ladi, qulaylik uchun. Lekin agar u ALLAQACHON boshqa guruhda
+                    // (masalan Umumiy'da Moderator) faol bo'lsa — MAJBURAN almashtirmaymiz, aks holda
+                    // odam boshqa joyda Kotib qilib qo'shilganda o'zining Moderatorlik guruhidan
+                    // "chiqarilib" ketadi (➕ Yangi uchrashuv tugmasi yo'qolib qoladi). Kerak bo'lsa
+                    // «👥 Guruh» tugmasi orqali istalgan guruhga o'zi almashtiradi.
+                    $hadNoActiveGroup = $member->active_group_id === null;
+                    if ($hadNoActiveGroup) {
+                        $member->active_group_id = $group->id;
+                        $member->save(false);
+                    }
 
-                    (new BotHandler(Yii::$app->telegram))
-                        ->notifyMenuRefresh($member, $group, "👋 Siz «{$group->name}» guruhiga qo'shildingiz. Yangi menyu:");
+                    $joinedText = match (true) {
+                        $member->language === User::LANG_RU && $hadNoActiveGroup => "👋 Вы добавлены в группу «{$group->name}». Новое меню:",
+                        $member->language === User::LANG_RU => "👋 Вы добавлены в группу «{$group->name}». "
+                            . "Чтобы работать в ней, переключитесь через «👥 Группа». Меню:",
+                        $member->language === User::LANG_UZ_CYRL && $hadNoActiveGroup => "👋 Сиз «{$group->name}» гуруҳига қўшилдингиз. Янги меню:",
+                        $member->language === User::LANG_UZ_CYRL => "👋 Сиз «{$group->name}» гуруҳига қўшилдингиз. "
+                            . "Унда ишлаш учун «👥 Гуруҳ» тугмаси орқали алмаштиринг. Меню:",
+                        $hadNoActiveGroup => "👋 Siz «{$group->name}» guruhiga qo'shildingiz. Yangi menyu:",
+                        default => "👋 Siz «{$group->name}» guruhiga qo'shildingiz. "
+                            . "Unda ishlash uchun «👥 Guruh» tugmasi orqali almashtiring. Menyu:",
+                    };
+                    // notifyUserMenu (notifyMenuRefresh emas) — chunki u foydalanuvchining HAQIQIY faol
+                    // guruhi bo'yicha menyu ko'rsatadi (agar faol guruh o'zgarmagan bo'lsa, yangi qo'shilgan
+                    // guruhning emas, balki uning haqiqiy joriy menyusini ko'rsatadi).
+                    (new BotHandler(Yii::$app->telegram))->notifyUserMenu($member, $joinedText);
                 }
             }
 
@@ -368,12 +388,15 @@ HTML;
                 $user->is_observer = !$user->is_observer;
                 $user->save(false);
 
-                (new BotHandler(Yii::$app->telegram))->notifyUserMenu(
-                    $user,
-                    $user->is_observer
-                        ? "👁 Sizga «Kuzatuvchi» roli berildi. Pastdagi tugmalardan birini bosing — so'ng qaysi guruh kerakligini so'raydi va o'sha guruhning uchrashuvlari/a'zolari/tarixi/statistikasini ko'rsatadi. Yangi menyu:"
-                        : "ℹ️ Sizning «Kuzatuvchi» rolingiz olib tashlandi. Yangi menyu:"
-                );
+                $observerText = match (true) {
+                    $user->language === User::LANG_RU && $user->is_observer => "👁 Вам присвоена роль «Наблюдатель». Нажмите одну из кнопок ниже — бот спросит, какая группа нужна, и покажет её встречи/участников/историю/статистику. Новое меню:",
+                    $user->language === User::LANG_RU => "ℹ️ Ваша роль «Наблюдатель» снята. Новое меню:",
+                    $user->language === User::LANG_UZ_CYRL && $user->is_observer => "👁 Сизга «Кузатувчи» роли берилди. Пастдаги тугмалардан бирини босинг — сўнг қайси гуруҳ кераклигини сўрайди ва ўша гуруҳнинг учрашувлари/аъзолари/тарихи/статистикасини кўрсатади. Янги меню:",
+                    $user->language === User::LANG_UZ_CYRL => "ℹ️ Сизнинг «Кузатувчи» ролингиз олиб ташланди. Янги меню:",
+                    $user->is_observer => "👁 Sizga «Kuzatuvchi» roli berildi. Pastdagi tugmalardan birini bosing — so'ng qaysi guruh kerakligini so'raydi va o'sha guruhning uchrashuvlari/a'zolari/tarixi/statistikasini ko'rsatadi. Yangi menyu:",
+                    default => "ℹ️ Sizning «Kuzatuvchi» rolingiz olib tashlandi. Yangi menyu:",
+                };
+                (new BotHandler(Yii::$app->telegram))->notifyUserMenu($user, $observerText);
 
                 Yii::$app->session->setFlash(
                     'success',
@@ -424,12 +447,22 @@ HTML;
                 $bot = new BotHandler(Yii::$app->telegram);
                 $member = User::findOne($userId);
                 if ($member !== null) {
-                    $bot->notifyMenuRefresh($member, $group, "👑 Siz «{$group->name}» guruhining Moderatori etib tayinlandingiz. Yangi menyu:");
+                    $promotedText = match ($member->language) {
+                        User::LANG_RU => "👑 Вы назначены Модератором группы «{$group->name}». Новое меню:",
+                        User::LANG_UZ_CYRL => "👑 Сиз «{$group->name}» гуруҳининг Модератори этиб тайинландингиз. Янги меню:",
+                        default => "👑 Siz «{$group->name}» guruhining Moderatori etib tayinlandingiz. Yangi menyu:",
+                    };
+                    $bot->notifyMenuRefresh($member, $group, $promotedText);
                 }
                 if ($previousModeratorId && $previousModeratorId !== $userId) {
                     $previousModerator = User::findOne($previousModeratorId);
                     if ($previousModerator !== null) {
-                        $bot->notifyMenuRefresh($previousModerator, $group, "ℹ️ Endi «{$group->name}» guruhining Moderatori boshqa shaxs. Yangi menyu:");
+                        $demotedText = match ($previousModerator->language) {
+                            User::LANG_RU => "ℹ️ Теперь Модератор группы «{$group->name}» — другой человек. Новое меню:",
+                            User::LANG_UZ_CYRL => "ℹ️ Энди «{$group->name}» гуруҳининг Модератори бошқа шахс. Янги меню:",
+                            default => "ℹ️ Endi «{$group->name}» guruhining Moderatori boshqa shaxs. Yangi menyu:",
+                        };
+                        $bot->notifyMenuRefresh($previousModerator, $group, $demotedText);
                     }
                 }
             }
@@ -816,14 +849,38 @@ HTML;
         ];
 
         $setUrl = Url::to(['admin/meeting-set-attendance']);
+        $toggleRoleUrl = Url::to(['admin/meeting-toggle-role']);
         $isFinished = $meeting->isFinished();
+        $isModeratorOf = fn (int $uid) => $group->moderator_user_id === $uid;
 
         $rows = '';
         foreach ($participants as $uid => $row) {
             /** @var User $participant */
             $participant = $row['user'];
             $currentStatus = $attendances[$uid]->status ?? null;
-            $roleNames = Role::namesOnly($row['roles']);
+
+            // Har bir uchrashuvda odamning roli har xil bo'lishi mumkin (Moderatordan tashqari) —
+            // shuning uchun guruh shablonini emas, shu uchrashuvning o'z rollarini (MeetingUserRole)
+            // shu yerda to'g'ridan-to'g'ri belgilaymiz/tuzatamiz.
+            if ($isModeratorOf($uid)) {
+                $rolesCell = htmlspecialchars(Role::namesOnly($row['roles']));
+            } else {
+                $selectedRoleIds = MeetingUserRole::roleIdsFor($meeting->id, $uid);
+                $rolesCell = '';
+                foreach (Role::assignable() as $role) {
+                    $checked = in_array($role->id, $selectedRoleIds, true);
+                    $style = $checked
+                        ? 'background:#2c3e50;color:#fff;border:1px solid #2c3e50;'
+                        : 'background:#fff;color:#2c3e50;border:1px solid #2c3e50;';
+                    $rolesCell .= "<form method=\"post\" action=\"{$toggleRoleUrl}\" style=\"display:inline;\">"
+                        . "<input type=\"hidden\" name=\"meeting_id\" value=\"{$meeting->id}\">"
+                        . "<input type=\"hidden\" name=\"user_id\" value=\"{$uid}\">"
+                        . "<input type=\"hidden\" name=\"role_id\" value=\"{$role->id}\">"
+                        . "<button type=\"submit\" style=\"font-size:11px;padding:3px 8px;margin:0 4px 4px 0;border-radius:10px;cursor:pointer;{$style}\">"
+                        . ($checked ? '☑ ' : '☐ ') . htmlspecialchars($role->label()) . '</button>'
+                        . '</form>';
+                }
+            }
 
             // Yakunlangandan keyin ham tuzatish mumkin (masalan xato bosilgan bo'lsa) — «🔁 Qayta joylashtirish»
             // tugmasi bilan kanaldagi postni to'g'irlangan holda qayta yuborish mumkin.
@@ -843,18 +900,22 @@ HTML;
 
             $rows .= '<tr>'
                 . '<td>' . htmlspecialchars($participant->full_name) . '</td>'
-                . '<td>' . htmlspecialchars($roleNames) . '</td>'
+                . '<td style="white-space:nowrap;">' . $rolesCell . '</td>'
                 . '<td style="white-space:nowrap;">' . $buttons . '</td>'
                 . '</tr>';
         }
 
-        $table = $this->table(['F.I.Sh.', 'Rollar', 'Davomat'], $rows, "Jami ishtirokchilar: " . count($participants));
+        $table = $this->table(
+            ['F.I.Sh.', 'Rollar (shu uchrashuv uchun)', 'Davomat'],
+            $rows,
+            "Jami ishtirokchilar: " . count($participants) . ' <span style="color:#aaa;">(rollarni bosib yoqish/o\'chirish mumkin — Moderatordan tashqari)</span>'
+        );
 
         $addGuestUrl = Url::to(['admin/meeting-add-guest']);
         $guestForm = <<<HTML
 <form method="post" action="{$addGuestUrl}" style="margin:16px 0;background:#fff;padding:14px 18px;border-radius:6px;max-width:480px;">
 <input type="hidden" name="meeting_id" value="{$meeting->id}">
-<label>🎫 Mehmon qo'shish (ro'yxatdan o'tmagan, boshqa jamoa/guruhdan bo'lishi mumkin)<br>
+<label>👤 Mehmon qo'shish (ro'yxatdan o'tmagan, boshqa jamoa/guruhdan bo'lishi mumkin)<br>
 <input type="text" name="full_name" placeholder="F.I.Sh." required style="width:100%;padding:8px;margin-top:6px;box-sizing:border-box;">
 </label>
 <button type="submit" style="margin-top:10px;padding:8px 18px;background:#2c3e50;color:#fff;border:none;border-radius:4px;cursor:pointer;">Qo'shish</button>
@@ -902,8 +963,29 @@ HTML;
                         'user_id' => $guest->id,
                         'role_id' => (int) $mehmonRoleId,
                     ]))->save(false);
-                    Yii::$app->session->setFlash('success', "🎫 «{$fullName}» mehmon sifatida qo'shildi. Endi davomatini belgilang.");
+                    Yii::$app->session->setFlash('success', "👤 «{$fullName}» mehmon sifatida qo'shildi. Endi davomatini belgilang.");
                 }
+            }
+
+            return $this->redirect(['admin/meeting-attendance', 'id' => $meeting->id]);
+        }
+
+        return $this->redirect(['admin/meetings']);
+    }
+
+    /** Uchrashuvning bitta ishtirokchisi uchun rolni yoqish/o'chirish (guruh shabloniga tegmaydi). */
+    public function actionMeetingToggleRole(): Response
+    {
+        if (Yii::$app->request->isPost) {
+            $meeting = Meeting::findOne((int) Yii::$app->request->post('meeting_id'));
+            if ($meeting === null) {
+                return $this->redirect(['admin/meetings']);
+            }
+
+            $userId = (int) Yii::$app->request->post('user_id');
+            $roleId = (int) Yii::$app->request->post('role_id');
+            if ($meeting->group->moderator_user_id !== $userId && $userId > 0 && $roleId > 0) {
+                MeetingUserRole::toggleAndNormalize($meeting->id, $userId, $roleId);
             }
 
             return $this->redirect(['admin/meeting-attendance', 'id' => $meeting->id]);
@@ -1184,7 +1266,7 @@ HTML;
 <h3 style="margin-top:0;">Buyruqlar menyusi («/» tugmasi)</h3>
 {$currentTable}
 <form method="post" action="{$setCommandsUrl}" style="margin-top:14px;">
-<button type="submit" style="padding:10px 20px;background:#2c3e50;color:#fff;border:none;border-radius:4px;cursor:pointer;">/start ni ro'yxatga olish</button>
+<button type="submit" style="padding:10px 20px;background:#2c3e50;color:#fff;border:none;border-radius:4px;cursor:pointer;">/start va /til ni ro'yxatga olish</button>
 </form>
 </div>
 HTML;
@@ -1195,6 +1277,7 @@ HTML;
         if (Yii::$app->request->isPost) {
             $result = Yii::$app->telegram->setMyCommands([
                 ['command' => 'start', 'description' => "Botni ishga tushirish / ro'yxatdan o'tish"],
+                ['command' => 'til', 'description' => "Interfeys tilini o'zgartirish / Change language / Изменить язык"],
             ]);
             Yii::$app->session->setFlash(
                 !empty($result['ok']) ? 'success' : 'error',

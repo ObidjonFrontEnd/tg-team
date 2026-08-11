@@ -24,14 +24,39 @@ use Yii;
  */
 class BotHandler
 {
-    private const BTN_UPCOMING = '📅 Uchrashuvlar';
-    private const BTN_UPCOMING_TRENING = '📅 Treninglar';
-    private const BTN_CREATE_MEETING = '➕ Yangi uchrashuv';
-    private const BTN_CREATE_TRENING = '➕ Yangi trening';
-    private const BTN_MARK_ATTENDANCE = '✅ Davomat';
-    private const BTN_GROUP_MEMBERS = '👥 Guruh';
-    private const BTN_MEETING_HISTORY = '🕘 Tarix';
-    private const BTN_STATS = '📊 Statistika';
+    /**
+     * Doimiy pastki tugmalar — har bir kalit uchun 3 tilda ('_trening' qo'shimchasi bilan
+     * Umumiy guruh varianti). Aniq matn emas, KALIT bilan ishlash uchun — qarang btnLabel()/isButton().
+     */
+    private const BUTTON_LABELS = [
+        'upcoming' => [User::LANG_UZ => '📅 Uchrashuvlar', User::LANG_UZ_CYRL => '📅 Учрашувлар', User::LANG_RU => '📅 Встречи'],
+        'upcoming_trening' => [User::LANG_UZ => '📅 Treninglar', User::LANG_UZ_CYRL => '📅 Тренинглар', User::LANG_RU => '📅 Тренинги'],
+        'create' => [User::LANG_UZ => '➕ Yangi uchrashuv', User::LANG_UZ_CYRL => '➕ Янги учрашув', User::LANG_RU => '➕ Новая встреча'],
+        'create_trening' => [User::LANG_UZ => '➕ Yangi trening', User::LANG_UZ_CYRL => '➕ Янги тренинг', User::LANG_RU => '➕ Новый тренинг'],
+        'attendance' => [User::LANG_UZ => '✅ Davomat', User::LANG_UZ_CYRL => '✅ Давомат', User::LANG_RU => '✅ Посещаемость'],
+        'group' => [User::LANG_UZ => '👥 Guruh', User::LANG_UZ_CYRL => '👥 Гуруҳ', User::LANG_RU => '👥 Группа'],
+        'history' => [User::LANG_UZ => '🕘 Tarix', User::LANG_UZ_CYRL => '🕘 Тарих', User::LANG_RU => '🕘 История'],
+        'stats' => [User::LANG_UZ => '📊 Statistika', User::LANG_UZ_CYRL => '📊 Статистика', User::LANG_RU => '📊 Статистика'],
+    ];
+
+    private function btnLabel(string $key, string $lang, bool $isTrening = false): string
+    {
+        $effectiveKey = ($isTrening && isset(self::BUTTON_LABELS["{$key}_trening"])) ? "{$key}_trening" : $key;
+
+        return self::BUTTON_LABELS[$effectiveKey][$lang] ?? self::BUTTON_LABELS[$effectiveKey][User::LANG_UZ];
+    }
+
+    /** $text berilgan tugma kalitiga (istalgan tilda, uchrashuv/trening variantidan qat'i nazar) mos kelishini tekshiradi. */
+    private function isButton(string $text, string $key): bool
+    {
+        foreach ([User::LANG_UZ, User::LANG_UZ_CYRL, User::LANG_RU] as $lang) {
+            if ($text === $this->btnLabel($key, $lang, false) || $text === $this->btnLabel($key, $lang, true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     /** Davomatni belgilash faqat uchrashuv boshlanganidan keyin va shuncha soat ichida ochiq. */
     private const ATTENDANCE_WINDOW_HOURS = 12;
@@ -128,10 +153,12 @@ class BotHandler
      */
     private function mainMenuKeyboard(User $user, ?Group $group): array
     {
+        $lang = $user->language;
+
         if ($user->is_observer) {
             return [
-                [self::BTN_UPCOMING, self::BTN_GROUP_MEMBERS],
-                [self::BTN_MEETING_HISTORY, self::BTN_STATS],
+                [$this->btnLabel('upcoming', $lang), $this->btnLabel('group', $lang)],
+                [$this->btnLabel('history', $lang), $this->btnLabel('stats', $lang)],
             ];
         }
 
@@ -141,17 +168,16 @@ class BotHandler
 
         $isModerator = $group->moderator_user_id === $user->id;
         $isKotib = !$isModerator && $this->isKotibInGroup($group, $user);
-        $upcomingBtn = $group->isUmumiy() ? self::BTN_UPCOMING_TRENING : self::BTN_UPCOMING;
-        $createBtn = $group->isUmumiy() ? self::BTN_CREATE_TRENING : self::BTN_CREATE_MEETING;
+        $isTrening = $group->isUmumiy();
 
-        $rows = [[$upcomingBtn, self::BTN_GROUP_MEMBERS]];
+        $rows = [[$this->btnLabel('upcoming', $lang, $isTrening), $this->btnLabel('group', $lang)]];
 
         $row2 = [];
         if ($isModerator) {
-            $row2[] = $createBtn;
+            $row2[] = $this->btnLabel('create', $lang, $isTrening);
         }
         if ($isModerator || $isKotib) {
-            $row2[] = self::BTN_MARK_ATTENDANCE;
+            $row2[] = $this->btnLabel('attendance', $lang);
         }
         if ($row2) {
             $rows[] = $row2;
@@ -169,7 +195,12 @@ class BotHandler
             $rows[] = [['text' => $group->name, 'callback_data' => "swg:{$group->id}"]];
         }
 
-        $this->api->sendMessage($chatId, "👥 Qaysi guruh a'zolarini ko'rmoqchisiz?", $rows);
+        $prompt = match ($user->language) {
+            User::LANG_RU => "👥 Участников какой группы хотите посмотреть?",
+            User::LANG_UZ_CYRL => "👥 Қайси гуруҳ аъзоларини кўрмоқчисиз?",
+            default => "👥 Qaysi guruh a'zolarini ko'rmoqchisiz?",
+        };
+        $this->api->sendMessage($chatId, $prompt, $rows);
     }
 
     /** Guruh tanlangach — faol guruh sifatida saqlanadi (keyingi Uchrashuvlar/Davomat ham shu bilan ishlaydi) va a'zolari ko'rsatiladi. */
@@ -204,24 +235,31 @@ class BotHandler
     }
 
     /** Har qanday ko'p bosqichli jarayonni (uchrashuv yaratish/tahrirlash, mehmon qo'shish va h.k.) bekor qilish tugmasi. */
-    private function cancelKeyboard(): array
+    private function cancelKeyboard(string $lang = User::LANG_UZ): array
     {
-        return [[['text' => '❌ Bekor qilish', 'callback_data' => 'cancelflow']]];
+        $label = match ($lang) {
+            User::LANG_RU => '❌ Отмена',
+            User::LANG_UZ_CYRL => '❌ Бекор қилиш',
+            default => '❌ Bekor qilish',
+        };
+
+        return [[['text' => $label, 'callback_data' => 'cancelflow']]];
     }
 
     /** Foydalanuvchi ozod matn o'rniga asosiy menyu tugmalaridan birini bosganini aniqlaydi. */
     private function isMenuButtonText(string $text): bool
     {
-        return str_starts_with($text, '/') || in_array($text, [
-            self::BTN_UPCOMING,
-            self::BTN_UPCOMING_TRENING,
-            self::BTN_CREATE_MEETING,
-            self::BTN_CREATE_TRENING,
-            self::BTN_MARK_ATTENDANCE,
-            self::BTN_GROUP_MEMBERS,
-            self::BTN_MEETING_HISTORY,
-            self::BTN_STATS,
-        ], true);
+        if (str_starts_with($text, '/')) {
+            return true;
+        }
+        foreach (array_keys(self::BUTTON_LABELS) as $key) {
+            $baseKey = str_ends_with($key, '_trening') ? substr($key, 0, -8) : $key;
+            if ($this->isButton($text, $baseKey)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function sendMainMenu(int $chatId, User $user, ?Group $group, string $text): void
@@ -237,11 +275,16 @@ class BotHandler
     private function askForPhone(int $chatId, User $user): void
     {
         UserState::set($user->telegram_id, 'reg_wait_phone');
+        $shareLabel = match ($user->language) {
+            User::LANG_RU => '📱 Поделиться номером',
+            User::LANG_UZ_CYRL => '📱 Рақамни улашиш',
+            default => '📱 Raqamni ulashish',
+        };
         $this->api->sendMessage(
             $chatId,
-            Texts::askPhone(),
+            Texts::askPhone($user->language),
             null,
-            [[['text' => '📱 Raqamni ulashish', 'request_contact' => true]]]
+            [[['text' => $shareLabel, 'request_contact' => true]]]
         );
     }
 
@@ -249,7 +292,12 @@ class BotHandler
     {
         $phone = trim($phone);
         if ($phone === '') {
-            $this->api->sendMessage($chatId, "Raqam bo'sh bo'lmasligi kerak. Tugma orqali yuboring yoki qo'lda yozing:");
+            $emptyPhone = match ($user->language) {
+                User::LANG_RU => "Номер не может быть пустым. Отправьте через кнопку или введите вручную:",
+                User::LANG_UZ_CYRL => "Рақам бўш бўлмаслиги керак. Тугма орқали юборинг ёки қўлда ёзинг:",
+                default => "Raqam bo'sh bo'lmasligi kerak. Tugma orqali yuboring yoki qo'lda yozing:",
+            };
+            $this->api->sendMessage($chatId, $emptyPhone);
 
             return;
         }
@@ -257,7 +305,46 @@ class BotHandler
         $user->phone = $phone;
         $user->save(false);
         UserState::clear($user->telegram_id);
-        $this->sendMainMenu($chatId, $user, $this->currentGroup($user), Texts::registrationDone($user->full_name));
+        $this->sendMainMenu($chatId, $user, $this->currentGroup($user), Texts::registrationDone($user->language, $user->full_name));
+    }
+
+    // -------------------------------------------------------------- til (language)
+
+    private const LANGUAGE_PROMPT = "🌐 Tilni tanlang / Тилни танланг / Выберите язык:";
+
+    private function askLanguage(int $chatId, User $user): void
+    {
+        UserState::set($user->telegram_id, 'lang_wait_choice');
+        $this->api->sendMessage($chatId, self::LANGUAGE_PROMPT, [
+            [['text' => "🇺🇿 O'zbek (lotin)", 'callback_data' => 'lang:' . User::LANG_UZ]],
+            [['text' => "🇺🇿 Ўзбек (кирилл)", 'callback_data' => 'lang:' . User::LANG_UZ_CYRL]],
+            [['text' => "🇷🇺 Русский", 'callback_data' => 'lang:' . User::LANG_RU]],
+        ]);
+    }
+
+    private function setLanguage(int $chatId, User $user, string $lang): void
+    {
+        if (!in_array($lang, [User::LANG_UZ, User::LANG_UZ_CYRL, User::LANG_RU], true)) {
+            return;
+        }
+
+        $user->language = $lang;
+        $user->save(false);
+
+        if (!$user->isRegistered()) {
+            UserState::set($user->telegram_id, 'reg_wait_name');
+            $this->api->sendMessage($chatId, Texts::welcome($lang));
+
+            return;
+        }
+
+        UserState::clear($user->telegram_id);
+        $confirm = match ($lang) {
+            User::LANG_RU => "✅ Язык изменён на русский.",
+            User::LANG_UZ_CYRL => "✅ Тил ўзбекча (кирилл)га ўзгартирилди.",
+            default => "✅ Til o'zbekchaga (lotin) o'zgartirildi.",
+        };
+        $this->sendMainMenu($chatId, $user, $user->is_observer ? null : $this->currentGroup($user), $confirm);
     }
 
     // ------------------------------------------------------------- messages
@@ -277,23 +364,28 @@ class BotHandler
             return;
         }
 
+        if ($text === '/til' || $text === '/language') {
+            UserState::clear($user->telegram_id);
+            $this->askLanguage($chatId, $user);
+
+            return;
+        }
+
         if ($text === '/start') {
             UserState::clear($user->telegram_id);
             if (!$user->isRegistered()) {
-                UserState::set($user->telegram_id, 'reg_wait_name');
-                $this->api->sendMessage($chatId, Texts::welcome());
+                $this->askLanguage($chatId, $user);
             } elseif (empty($user->phone)) {
                 $this->askForPhone($chatId, $user);
             } else {
-                $this->sendMainMenu($chatId, $user, $this->currentGroup($user), Texts::mainMenuHint());
+                $this->sendMainMenu($chatId, $user, $this->currentGroup($user), Texts::mainMenuHint($user->language));
             }
 
             return;
         }
 
-        if (!$user->isRegistered() && $stateName !== 'reg_wait_name' && $stateName !== 'reg_wait_position') {
-            UserState::set($user->telegram_id, 'reg_wait_name');
-            $this->api->sendMessage($chatId, Texts::welcome());
+        if (!$user->isRegistered() && !in_array($stateName, ['lang_wait_choice', 'reg_wait_name', 'reg_wait_position'], true)) {
+            $this->askLanguage($chatId, $user);
 
             return;
         }
@@ -316,8 +408,8 @@ class BotHandler
                 // Ro'yxatdan o'tish hali tugallanmagan — bosilgan tugmani e'tiborsiz qoldirib,
                 // xuddi shu bosqichni (holatni o'zgartirmasdan) qaytadan so'raymiz, boshidan emas.
                 match ($stateName) {
-                    'reg_wait_name' => $this->api->sendMessage($chatId, Texts::welcome()),
-                    'reg_wait_position' => $this->api->sendMessage($chatId, Texts::askPosition()),
+                    'reg_wait_name' => $this->api->sendMessage($chatId, Texts::welcome($user->language)),
+                    'reg_wait_position' => $this->api->sendMessage($chatId, Texts::askPosition($user->language)),
                     'reg_wait_phone' => $this->askForPhone($chatId, $user),
                     default => null,
                 };
@@ -330,11 +422,16 @@ class BotHandler
         }
 
         switch ($stateName) {
+            case 'lang_wait_choice':
+                $this->askLanguage($chatId, $user);
+
+                return;
+
             case 'reg_wait_name':
                 $user->full_name = $text;
                 $user->save(false);
                 UserState::set($user->telegram_id, 'reg_wait_position');
-                $this->api->sendMessage($chatId, Texts::askPosition());
+                $this->api->sendMessage($chatId, Texts::askPosition($user->language));
 
                 return;
 
@@ -353,8 +450,13 @@ class BotHandler
             case 'meeting_wait_topic':
                 $topicContext = $state->getContextData() + ['topic' => $text];
                 UserState::set($user->telegram_id, 'meeting_wait_day', $topicContext);
-                $topicWord = Group::findOne($topicContext['group_id'] ?? null)?->isUmumiy() ? 'Trening' : 'Uchrashuv';
-                $this->api->sendMessage($chatId, "{$topicWord} sanasini tanlang:", $this->dayPickerKeyboard());
+                $isTreningTopic = Group::findOne($topicContext['group_id'] ?? null)?->isUmumiy() ?? false;
+                $dayPrompt = match ($user->language) {
+                    User::LANG_RU => "Выберите дату " . ($isTreningTopic ? 'тренинга' : 'встречи') . ':',
+                    User::LANG_UZ_CYRL => ($isTreningTopic ? 'Тренинг' : 'Учрашув') . " санасини танланг:",
+                    default => ($isTreningTopic ? 'Trening' : 'Uchrashuv') . " sanasini tanlang:",
+                };
+                $this->api->sendMessage($chatId, $dayPrompt, $this->dayPickerKeyboard($user->language));
 
                 return;
 
@@ -393,45 +495,30 @@ class BotHandler
         // Kuzatuvchi uchun «faol guruh» tushunchasi yo'q — bu qiymat oddiy a'zo/Kotib/Moderator uchun ishlatiladi.
         $group = $user->is_observer ? null : $this->currentGroup($user);
 
-        switch ($text) {
-            case self::BTN_UPCOMING:
-            case self::BTN_UPCOMING_TRENING:
-                if ($user->is_observer) {
-                    $this->showObserverGroupPicker($chatId, 'oum', "📅 Qaysi guruhning uchrashuvlarini ko'rmoqchisiz?");
-                } else {
-                    $this->showUpcomingMeetings($chatId, $user);
-                }
-                break;
-
-            case self::BTN_CREATE_MEETING:
-            case self::BTN_CREATE_TRENING:
-                $this->startMeetingCreation($chatId, $user, $group);
-                break;
-
-            case self::BTN_GROUP_MEMBERS:
-                if ($user->is_observer) {
-                    $this->showObserverGroupPicker($chatId, 'ogm', "👥 Qaysi guruh a'zolarini ko'rmoqchisiz?");
-                } elseif (count($this->userGroups($user)) > 1) {
-                    $this->showGroupPicker($chatId, $user);
-                } else {
-                    $this->showGroupMembers($chatId, $user, $group);
-                }
-                break;
-
-            case self::BTN_MARK_ATTENDANCE:
-                $this->showAttendanceMeetingList($chatId, $user, $group);
-                break;
-
-            case self::BTN_MEETING_HISTORY:
-                $this->showObserverGroupPicker($chatId, 'ohm', "🕘 Qaysi guruhning tarixini ko'rmoqchisiz?");
-                break;
-
-            case self::BTN_STATS:
-                $this->showObserverGroupPicker($chatId, 'ogs', "📊 Qaysi guruhning statistikasini ko'rmoqchisiz?");
-                break;
-
-            default:
-                $this->sendMainMenu($chatId, $user, $group, Texts::mainMenuHint());
+        if ($this->isButton($text, 'upcoming')) {
+            if ($user->is_observer) {
+                $this->showObserverGroupPicker($chatId, $user, 'oum', 'upcoming');
+            } else {
+                $this->showUpcomingMeetings($chatId, $user);
+            }
+        } elseif ($this->isButton($text, 'create')) {
+            $this->startMeetingCreation($chatId, $user, $group);
+        } elseif ($this->isButton($text, 'group')) {
+            if ($user->is_observer) {
+                $this->showObserverGroupPicker($chatId, $user, 'ogm', 'group');
+            } elseif (count($this->userGroups($user)) > 1) {
+                $this->showGroupPicker($chatId, $user);
+            } else {
+                $this->showGroupMembers($chatId, $user, $group);
+            }
+        } elseif ($this->isButton($text, 'attendance')) {
+            $this->showAttendanceMeetingList($chatId, $user, $group);
+        } elseif ($this->isButton($text, 'history')) {
+            $this->showObserverGroupPicker($chatId, $user, 'ohm', 'history');
+        } elseif ($this->isButton($text, 'stats')) {
+            $this->showObserverGroupPicker($chatId, $user, 'ogs', 'stats');
+        } else {
+            $this->sendMainMenu($chatId, $user, $group, Texts::mainMenuHint($user->language));
         }
     }
 
@@ -445,14 +532,19 @@ class BotHandler
     private function showGroupMembers(int $chatId, User $user, ?Group $group): void
     {
         if ($group === null) {
-            $this->api->sendMessage($chatId, Texts::noGroup());
+            $this->api->sendMessage($chatId, Texts::noGroup($user->language));
 
             return;
         }
 
         $members = $group->getMembers()->all();
         if (!$members) {
-            $this->api->sendMessage($chatId, "Guruhda hali a'zolar yo'q. Administrator qo'shishi kerak.");
+            $noMembers = match ($user->language) {
+                User::LANG_RU => "В группе пока нет участников. Администратор должен их добавить.",
+                User::LANG_UZ_CYRL => "Гуруҳда ҳали аъзолар йўқ. Администратор қўшиши керак.",
+                default => "Guruhda hali a'zolar yo'q. Administrator qo'shishi kerak.",
+            };
+            $this->api->sendMessage($chatId, $noMembers);
 
             return;
         }
@@ -460,7 +552,14 @@ class BotHandler
         usort($members, fn (User $a, User $b) => $this->memberPriority($group, $a) <=> $this->memberPriority($group, $b));
 
         $isModerator = $group->moderator_user_id === $user->id;
-        $hint = $isModerator ? "Rolini o'zgartirish uchun ismini bosing:" : "Kontaktini (telefon raqamini) ko'rish uchun ismini bosing:";
+        $hint = match (true) {
+            $user->language === User::LANG_RU && $isModerator => "Нажмите на имя, чтобы изменить роль:",
+            $user->language === User::LANG_RU => "Нажмите на имя, чтобы увидеть контакт (номер телефона):",
+            $user->language === User::LANG_UZ_CYRL && $isModerator => "Ролини ўзгартириш учун исмини босинг:",
+            $user->language === User::LANG_UZ_CYRL => "Контактини (телефон рақамини) кўриш учун исмини босинг:",
+            $isModerator => "Rolini o'zgartirish uchun ismini bosing:",
+            default => "Kontaktini (telefon raqamini) ko'rish uchun ismini bosing:",
+        };
 
         $rows = [];
         foreach ($members as $member) {
@@ -468,7 +567,12 @@ class BotHandler
             $rows[] = [['text' => $label, 'callback_data' => "gm:{$group->id}:{$member->id}"]];
         }
 
-        $this->api->sendMessage($chatId, "👥 <b>Guruh a'zolari — {$group->name}</b>\n\n{$hint}", $rows);
+        $header = match ($user->language) {
+            User::LANG_RU => "👥 <b>Участники группы — {$group->name}</b>",
+            User::LANG_UZ_CYRL => "👥 <b>Гуруҳ аъзолари — {$group->name}</b>",
+            default => "👥 <b>Guruh a'zolari — {$group->name}</b>",
+        };
+        $this->api->sendMessage($chatId, "{$header}\n\n{$hint}", $rows);
     }
 
     /** Ism bosilganda: Moderator uchun rol tahrirlash, qolganlar uchun faqat kontakt kartasi. */
@@ -485,10 +589,10 @@ class BotHandler
             return;
         }
 
-        $this->showMemberContact($chatId, $group, $memberId);
+        $this->showMemberContact($chatId, $viewer, $group, $memberId);
     }
 
-    private function showMemberContact(int $chatId, Group $group, int $memberId): void
+    private function showMemberContact(int $chatId, User $viewer, Group $group, int $memberId): void
     {
         $member = User::findOne($memberId);
         if ($member === null) {
@@ -497,14 +601,29 @@ class BotHandler
 
         $roles = $this->memberRoles($group, $member);
         $icon = Role::leadEmoji($roles);
-        $phone = $member->phone ? "📱 <b>{$member->phone}</b>" : "📱 Telefon raqami hali ko'rsatilmagan";
+        $noPhone = match ($viewer->language) {
+            User::LANG_RU => "📱 Номер телефона пока не указан",
+            User::LANG_UZ_CYRL => "📱 Телефон рақами ҳали кўрсатилмаган",
+            default => "📱 Telefon raqami hali ko'rsatilmagan",
+        };
+        $phone = $member->phone ? "📱 <b>{$member->phone}</b>" : $noPhone;
+        $positionIcon = "💼 ";
+        $roleIcon = match ($viewer->language) {
+            User::LANG_RU => "🎭 ",
+            default => "🎭 ",
+        };
 
         $text = trim("{$icon} <b>{$member->full_name}</b>") . "\n"
-            . (($member->position ?? '') !== '' ? "💼 " . htmlspecialchars($member->position) . "\n" : '')
-            . "🎭 " . Role::namesOnly($roles) . "\n"
+            . (($member->position ?? '') !== '' ? $positionIcon . htmlspecialchars($member->position) . "\n" : '')
+            . $roleIcon . Role::namesOnly($roles) . "\n"
             . $phone;
 
-        $this->api->sendMessage($chatId, $text, [[['text' => '⬅️ Orqaga', 'callback_data' => "gvb:{$group->id}"]]]);
+        $back = match ($viewer->language) {
+            User::LANG_RU => '⬅️ Назад',
+            User::LANG_UZ_CYRL => '⬅️ Орқага',
+            default => '⬅️ Orqaga',
+        };
+        $this->api->sendMessage($chatId, $text, [[['text' => $back, 'callback_data' => "gvb:{$group->id}"]]]);
     }
 
     /** Ro'yxatlarda tartiblash uchun: Moderator birinchi, so'ng Kotib va boshqa rollar, Ishtirokchi oxirida. */
@@ -551,7 +670,7 @@ class BotHandler
         return $roles;
     }
 
-    private function memberRoleKeyboard(int $groupId, int $userId): array
+    private function memberRoleKeyboard(int $groupId, int $userId, string $lang = User::LANG_UZ): array
     {
         $selected = GroupMemberRole::roleIdsFor($groupId, $userId);
         $rows = [];
@@ -562,7 +681,12 @@ class BotHandler
                 'callback_data' => "gt:{$groupId}:{$userId}:{$role->id}",
             ]];
         }
-        $rows[] = [['text' => '⬅️ Orqaga', 'callback_data' => "gb:{$groupId}:{$userId}"]];
+        $back = match ($lang) {
+            User::LANG_RU => '⬅️ Назад',
+            User::LANG_UZ_CYRL => '⬅️ Орқага',
+            default => '⬅️ Orqaga',
+        };
+        $rows[] = [['text' => $back, 'callback_data' => "gb:{$groupId}:{$userId}"]];
 
         return $rows;
     }
@@ -577,7 +701,7 @@ class BotHandler
     public function notifyMenuRefresh(User $user, Group $group, string $text): void
     {
         if (!$user->isRegistered()) {
-            $this->api->sendMessage($user->telegram_id, $text . "\n\n⚠️ Ro'yxatdan oxirigacha o'tish uchun /start yozing.");
+            $this->api->sendMessage($user->telegram_id, $text . "\n\n" . $this->finishRegistrationHint($user->language));
 
             return;
         }
@@ -593,12 +717,21 @@ class BotHandler
     public function notifyUserMenu(User $user, string $text): void
     {
         if (!$user->isRegistered()) {
-            $this->api->sendMessage($user->telegram_id, $text . "\n\n⚠️ Ro'yxatdan oxirigacha o'tish uchun /start yozing.");
+            $this->api->sendMessage($user->telegram_id, $text . "\n\n" . $this->finishRegistrationHint($user->language));
 
             return;
         }
 
         $this->api->sendMessage($user->telegram_id, $text, null, $this->mainMenuKeyboard($user, $this->currentGroup($user)));
+    }
+
+    private function finishRegistrationHint(string $lang): string
+    {
+        return match ($lang) {
+            User::LANG_RU => "⚠️ Чтобы завершить регистрацию, напишите /start.",
+            User::LANG_UZ_CYRL => "⚠️ Рўйхатдан охиригача ўтиш учун /start ёзинг.",
+            default => "⚠️ Ro'yxatdan oxirigacha o'tish uchun /start yozing.",
+        };
     }
 
     private function openMemberRoleScreen(int $chatId, User $user, int $groupId, int $memberId): void
@@ -615,11 +748,16 @@ class BotHandler
 
         $phone = $member->phone ? "📱 <b>{$member->phone}</b>\n" : '';
         $position = ($member->position ?? '') !== '' ? "💼 " . htmlspecialchars($member->position) . "\n" : '';
+        $setRoles = match ($user->language) {
+            User::LANG_RU => "Назначьте роль(и):",
+            User::LANG_UZ_CYRL => "Учун рол(лар)ни белгиланг:",
+            default => "Uchun rol(lar)ni belgilang:",
+        };
 
         $this->api->sendMessage(
             $chatId,
-            "<b>{$member->full_name}</b>\n{$position}{$phone}\nUchun rol(lar)ni belgilang:",
-            $this->memberRoleKeyboard($groupId, $memberId)
+            "<b>{$member->full_name}</b>\n{$position}{$phone}\n{$setRoles}",
+            $this->memberRoleKeyboard($groupId, $memberId, $user->language)
         );
     }
 
@@ -632,7 +770,7 @@ class BotHandler
 
         GroupMemberRole::toggle($groupId, $memberId, $roleId);
 
-        $this->api->editMessageReplyMarkup($chatId, $messageId, $this->memberRoleKeyboard($groupId, $memberId));
+        $this->api->editMessageReplyMarkup($chatId, $messageId, $this->memberRoleKeyboard($groupId, $memberId, $user->language));
     }
 
     // ---------------------------------------------------------- observer
@@ -642,12 +780,18 @@ class BotHandler
      * («Uchrashuvlar», «Guruh», «Tarix», «Statistika») bosilganda avval qaysi guruh
      * kerakligini so'raydi (inline ro'yxat, a'zolikdan qat'i nazar BARCHA guruhlar).
      */
-    private function showObserverGroupPicker(int $chatId, string $prefix, string $label): void
+    /** @param string $promptKey 'upcoming'|'group'|'history'|'stats' — qaysi bo'lim so'raganini bildiradi. */
+    private function showObserverGroupPicker(int $chatId, User $user, string $prefix, string $promptKey): void
     {
         // «Umumiy» guruh faqat uning Moderatoriga ko'rinadi — Kuzatuvchiga ham ko'rsatilmaydi.
         $groups = Group::find()->where(['<>', 'type', Group::TYPE_UMUMIY])->orderBy(['name' => SORT_ASC])->all();
         if (!$groups) {
-            $this->api->sendMessage($chatId, "Hozircha guruhlar yo'q.");
+            $noGroups = match ($user->language) {
+                User::LANG_RU => "Пока нет групп.",
+                User::LANG_UZ_CYRL => "Ҳозирча гуруҳлар йўқ.",
+                default => "Hozircha guruhlar yo'q.",
+            };
+            $this->api->sendMessage($chatId, $noGroups);
 
             return;
         }
@@ -656,6 +800,30 @@ class BotHandler
         foreach ($groups as $group) {
             $rows[] = [['text' => $group->name, 'callback_data' => "{$prefix}:{$group->id}"]];
         }
+
+        $prompts = [
+            'upcoming' => [
+                User::LANG_RU => "📅 Встречи/тренинги какой группы хотите посмотреть?",
+                User::LANG_UZ_CYRL => "📅 Қайси гуруҳнинг учрашувларини кўрмоқчисиз?",
+                User::LANG_UZ => "📅 Qaysi guruhning uchrashuvlarini ko'rmoqchisiz?",
+            ],
+            'group' => [
+                User::LANG_RU => "👥 Участников какой группы хотите посмотреть?",
+                User::LANG_UZ_CYRL => "👥 Қайси гуруҳ аъзоларини кўрмоқчисиз?",
+                User::LANG_UZ => "👥 Qaysi guruh a'zolarini ko'rmoqchisiz?",
+            ],
+            'history' => [
+                User::LANG_RU => "🕘 Историю какой группы хотите посмотреть?",
+                User::LANG_UZ_CYRL => "🕘 Қайси гуруҳнинг тарихини кўрмоқчисиз?",
+                User::LANG_UZ => "🕘 Qaysi guruhning tarixini ko'rmoqchisiz?",
+            ],
+            'stats' => [
+                User::LANG_RU => "📊 Статистику какой группы хотите посмотреть?",
+                User::LANG_UZ_CYRL => "📊 Қайси гуруҳнинг статистикасини кўрмоқчисиз?",
+                User::LANG_UZ => "📊 Qaysi guruhning statistikasini ko'rmoqchisiz?",
+            ],
+        ];
+        $label = $prompts[$promptKey][$user->language] ?? $prompts[$promptKey][User::LANG_UZ];
 
         $this->api->sendMessage($chatId, $label, $rows);
     }
@@ -674,16 +842,27 @@ class BotHandler
 
         $meetings = $this->activeMeetings($group);
         if (!$meetings) {
-            $this->api->sendMessage($chatId, Texts::upcomingMeetingsEmpty());
+            $this->api->sendMessage($chatId, Texts::upcomingMeetingsEmpty($user->language));
 
             return;
         }
 
-        $text = "📅 <b>{$group->name} — yaqinlashib kelayotgan uchrashuvlar:</b>\n\n";
+        $lang = $user->language;
+        $header = match ($lang) {
+            User::LANG_RU => "📅 <b>{$group->name} — ближайшие встречи:</b>\n\n",
+            User::LANG_UZ_CYRL => "📅 <b>{$group->name} — яқинлашиб келаётган учрашувлар:</b>\n\n",
+            default => "📅 <b>{$group->name} — yaqinlashib kelayotgan uchrashuvlar:</b>\n\n",
+        };
+        $statusWord = match ($lang) {
+            User::LANG_RU => '📊 Статус: ',
+            User::LANG_UZ_CYRL => '📊 Ҳолат: ',
+            default => '📊 Holat: ',
+        };
+        $text = $header;
         foreach ($meetings as $meeting) {
             $text .= "📌 «{$meeting->topic}»\n"
-                . "🗓 " . Texts::formatDate($meeting->meeting_at) . " · {$meeting->formatLabel()}\n"
-                . "📊 Holat: " . $this->meetingStatusLabel($meeting->status) . "\n\n";
+                . "🗓 " . Texts::formatDate($meeting->meeting_at) . " · " . Texts::formatLabel($meeting->format, $lang) . "\n"
+                . $statusWord . $this->meetingStatusLabel($meeting->status, $lang) . "\n\n";
         }
 
         $this->api->sendMessage($chatId, rtrim($text));
@@ -707,18 +886,33 @@ class BotHandler
             ->limit(20)
             ->all();
 
+        $lang = $user->language;
         if (!$meetings) {
-            $this->api->sendMessage($chatId, "«{$group->name}» guruhida hali yakunlangan uchrashuvlar yo'q.");
+            $noHistory = match ($lang) {
+                User::LANG_RU => "В группе «{$group->name}» пока нет завершённых встреч.",
+                User::LANG_UZ_CYRL => "«{$group->name}» гуруҳида ҳали якунланган учрашувлар йўқ.",
+                default => "«{$group->name}» guruhida hali yakunlangan uchrashuvlar yo'q.",
+            };
+            $this->api->sendMessage($chatId, $noHistory);
 
             return;
         }
 
-        $text = "🕘 <b>{$group->name} — o'tgan uchrashuvlar:</b>\n\n";
+        $header = match ($lang) {
+            User::LANG_RU => "🕘 <b>{$group->name} — прошедшие встречи:</b>\n\n",
+            User::LANG_UZ_CYRL => "🕘 <b>{$group->name} — ўтган учрашувлар:</b>\n\n",
+            default => "🕘 <b>{$group->name} — o'tgan uchrashuvlar:</b>\n\n",
+        };
+        $text = $header;
         foreach ($meetings as $meeting) {
             $present = $meeting->getAttendances()->andWhere(['status' => Attendance::STATUS_PRESENT])->count();
             $absent = $meeting->getAttendances()->andWhere(['status' => [Attendance::STATUS_ABSENT, Attendance::STATUS_EXCUSED]])->count();
-            $text .= "📌 «{$meeting->topic}» — " . Texts::formatDate($meeting->meeting_at) . "\n"
-                . "✅ {$present} keldi / ❌ {$absent} kelmadi\n\n";
+            $line = match ($lang) {
+                User::LANG_RU => "✅ {$present} пришли / ❌ {$absent} не пришли",
+                User::LANG_UZ_CYRL => "✅ {$present} келди / ❌ {$absent} келмади",
+                default => "✅ {$present} keldi / ❌ {$absent} kelmadi",
+            };
+            $text .= "📌 «{$meeting->topic}» — " . Texts::formatDate($meeting->meeting_at) . "\n{$line}\n\n";
         }
 
         $this->api->sendMessage($chatId, rtrim($text));
@@ -768,8 +962,14 @@ class BotHandler
         }
 
         $members = $group->getMembers()->orderBy(['full_name' => SORT_ASC])->all();
+        $lang = $user->language;
         if (!$members) {
-            $this->api->sendMessage($chatId, "«{$group->name}» guruhida hali a'zolar yo'q.");
+            $noMembers = match ($lang) {
+                User::LANG_RU => "В группе «{$group->name}» пока нет участников.",
+                User::LANG_UZ_CYRL => "«{$group->name}» гуруҳида ҳали аъзолар йўқ.",
+                default => "«{$group->name}» guruhida hali a'zolar yo'q.",
+            };
+            $this->api->sendMessage($chatId, $noMembers);
 
             return;
         }
@@ -793,14 +993,29 @@ class BotHandler
             $m = $monthStats[$member->id] ?? ['present' => 0, 'absent' => 0, 'excused' => 0];
             $a = $allStats[$member->id] ?? ['present' => 0, 'absent' => 0, 'excused' => 0];
 
+            $periodLabels = match ($lang) {
+                User::LANG_RU => ['week' => 'На этой неделе', 'month' => 'В этом месяце', 'all' => 'Всего'],
+                User::LANG_UZ_CYRL => ['week' => 'Бу ҳафта', 'month' => 'Бу ой', 'all' => 'Жами'],
+                default => ['week' => 'Bu hafta', 'month' => 'Bu oy', 'all' => 'Jami'],
+            };
             $lines[] = "• <b>{$member->full_name}</b>\n"
-                . "   Bu hafta: ✅{$w['present']}/❌" . ($w['absent'] + $w['excused'])
-                . " · Bu oy: ✅{$m['present']}/❌" . ($m['absent'] + $m['excused'])
-                . " · Jami: ✅{$a['present']}/❌" . ($a['absent'] + $a['excused']);
+                . "   {$periodLabels['week']}: ✅{$w['present']}/❌" . ($w['absent'] + $w['excused'])
+                . " · {$periodLabels['month']}: ✅{$m['present']}/❌" . ($m['absent'] + $m['excused'])
+                . " · {$periodLabels['all']}: ✅{$a['present']}/❌" . ($a['absent'] + $a['excused']);
         }
 
-        $text = "📊 <b>{$group->name} — davomat statistikasi</b>\n"
-            . "🗓 Uchrashuvlar: bu hafta {$weekMeetingsCount} · bu oy {$monthMeetingsCount} · jami {$allMeetingsCount}\n\n"
+        $statsTitle = match ($lang) {
+            User::LANG_RU => ['title' => "📊 <b>{$group->name} — статистика посещаемости</b>", 'meetings' => '🗓 Встречи: на этой неделе'],
+            User::LANG_UZ_CYRL => ['title' => "📊 <b>{$group->name} — давомат статистикаси</b>", 'meetings' => '🗓 Учрашувлар: бу ҳафта'],
+            default => ['title' => "📊 <b>{$group->name} — davomat statistikasi</b>", 'meetings' => "🗓 Uchrashuvlar: bu hafta"],
+        };
+        $monthAllLabel = match ($lang) {
+            User::LANG_RU => ' · в этом месяце %d · всего %d',
+            User::LANG_UZ_CYRL => ' · бу ой %d · жами %d',
+            default => ' · bu oy %d · jami %d',
+        };
+        $text = $statsTitle['title'] . "\n"
+            . $statsTitle['meetings'] . " {$weekMeetingsCount}" . sprintf($monthAllLabel, $monthMeetingsCount, $allMeetingsCount) . "\n\n"
             . implode("\n", $lines);
 
         $this->api->sendMessage($chatId, $text);
@@ -817,25 +1032,26 @@ class BotHandler
     {
         $group = $this->currentGroup($user);
         if ($group === null) {
-            $this->api->sendMessage($chatId, Texts::noGroup());
+            $this->api->sendMessage($chatId, Texts::noGroup($user->language));
 
             return;
         }
 
         $meetings = $this->activeMeetings($group);
         if (!$meetings) {
-            $this->api->sendMessage($chatId, Texts::upcomingMeetingsEmpty($group->isUmumiy()));
+            $this->api->sendMessage($chatId, Texts::upcomingMeetingsEmpty($user->language, $group->isUmumiy()));
 
             return;
         }
 
         $isModerator = $group->moderator_user_id === $user->id;
+        $isKotib = !$isModerator && $this->isKotibInGroup($group, $user);
 
-        if (!$isModerator) {
-            $text = Texts::upcomingMeetingsHeader($group->isUmumiy()) . "\n\n";
+        if (!$isModerator && !$isKotib) {
+            $text = Texts::upcomingMeetingsHeader($user->language, $group->isUmumiy()) . "\n\n";
             foreach ($meetings as $meeting) {
                 $myRoles = $meeting->getRolesOfUser($user->id);
-                $text .= Texts::upcomingMeetingItem($meeting, $myRoles) . "\n";
+                $text .= Texts::upcomingMeetingItem($user->language, $meeting, $myRoles) . "\n";
             }
             $this->api->sendMessage($chatId, $text);
 
@@ -850,7 +1066,12 @@ class BotHandler
                 'callback_data' => "mopen:{$meeting->id}",
             ]];
         }
-        $this->api->sendMessage($chatId, Texts::upcomingMeetingsHeader($group->isUmumiy()) . "\n\nBatafsil uchun bosing:", $rows);
+        $detailsHint = match ($user->language) {
+            User::LANG_RU => "\n\nНажмите для подробностей:",
+            User::LANG_UZ_CYRL => "\n\nБатафсил учун босинг:",
+            default => "\n\nBatafsil uchun bosing:",
+        };
+        $this->api->sendMessage($chatId, Texts::upcomingMeetingsHeader($user->language, $group->isUmumiy()) . $detailsHint, $rows);
     }
 
     /** @return Meeting[] */
@@ -862,32 +1083,55 @@ class BotHandler
             ->all();
     }
 
-    private function meetingStatusLabel(string $status): string
+    private function meetingStatusLabel(string $status, string $lang = User::LANG_UZ): string
     {
-        return match ($status) {
-            Meeting::STATUS_ANNOUNCED => "🕓 E'lon qilingan (hali boshlanmagan)",
-            Meeting::STATUS_ATTENDANCE_MARKING => "▶️ Davom etmoqda",
-            Meeting::STATUS_FINISHED => "🏁 Yakunlangan",
-            Meeting::STATUS_CANCELLED => "❌ Bekor qilingan",
-            default => $status,
+        return match ($lang) {
+            User::LANG_RU => match ($status) {
+                Meeting::STATUS_ANNOUNCED => "🕓 Анонсировано (ещё не началось)",
+                Meeting::STATUS_ATTENDANCE_MARKING => "▶️ Идёт",
+                Meeting::STATUS_FINISHED => "🏁 Завершено",
+                Meeting::STATUS_CANCELLED => "❌ Отменено",
+                default => $status,
+            },
+            User::LANG_UZ_CYRL => match ($status) {
+                Meeting::STATUS_ANNOUNCED => "🕓 Эълон қилинган (ҳали бошланмаган)",
+                Meeting::STATUS_ATTENDANCE_MARKING => "▶️ Давом этмоқда",
+                Meeting::STATUS_FINISHED => "🏁 Якунланган",
+                Meeting::STATUS_CANCELLED => "❌ Бекор қилинган",
+                default => $status,
+            },
+            default => match ($status) {
+                Meeting::STATUS_ANNOUNCED => "🕓 E'lon qilingan (hali boshlanmagan)",
+                Meeting::STATUS_ATTENDANCE_MARKING => "▶️ Davom etmoqda",
+                Meeting::STATUS_FINISHED => "🏁 Yakunlangan",
+                Meeting::STATUS_CANCELLED => "❌ Bekor qilingan",
+                default => $status,
+            },
         };
     }
 
-    private function meetingCardText(Meeting $meeting): string
+    private function meetingCardText(Meeting $meeting, string $lang = User::LANG_UZ): string
     {
+        $format = Texts::formatLabel($meeting->format, $lang);
+        $labels = match ($lang) {
+            User::LANG_RU => ['status' => '📊 Статус:', 'started' => '▶️ Начато:', 'ended' => '🏁 Завершено:', 'reason' => '📝 Причина отмены:'],
+            User::LANG_UZ_CYRL => ['status' => '📊 Ҳолат:', 'started' => '▶️ Бошланган:', 'ended' => '🏁 Тугаган:', 'reason' => '📝 Бекор қилиш сабаби:'],
+            default => ['status' => '📊 Holat:', 'started' => '▶️ Boshlangan:', 'ended' => '🏁 Tugagan:', 'reason' => '📝 Bekor qilish sababi:'],
+        };
+
         $lines = [
             "📌 <b>{$meeting->topic}</b>",
-            "🗓 " . Texts::formatDate($meeting->meeting_at) . " · {$meeting->formatLabel()}",
-            "📊 Holat: " . $this->meetingStatusLabel($meeting->status),
+            "🗓 " . Texts::formatDate($meeting->meeting_at) . " · {$format}",
+            $labels['status'] . ' ' . $this->meetingStatusLabel($meeting->status, $lang),
         ];
         if ($meeting->started_at) {
-            $lines[] = "▶️ Boshlangan: " . Texts::formatDate($meeting->started_at);
+            $lines[] = $labels['started'] . ' ' . Texts::formatDate($meeting->started_at);
         }
         if ($meeting->ended_at) {
-            $lines[] = "🏁 Tugagan: " . Texts::formatDate($meeting->ended_at);
+            $lines[] = $labels['ended'] . ' ' . Texts::formatDate($meeting->ended_at);
         }
         if ($meeting->status === Meeting::STATUS_CANCELLED) {
-            $lines[] = "📝 Bekor qilish sababi: " . ($meeting->cancel_reason ?: '—');
+            $lines[] = $labels['reason'] . ' ' . ($meeting->cancel_reason ?: '—');
         }
 
         return implode("\n", $lines);
@@ -899,25 +1143,49 @@ class BotHandler
      * chunki davomatni belgilash odatda boshqa odam (Kotib) ishi, Moderator boshlagandan keyin darhol
      * davomat ro'yxatini ko'rishi shart emas.
      */
-    private function meetingCardKeyboard(Meeting $meeting, User $viewer): array
+    private function meetingCardKeyboard(Meeting $meeting, User $viewer, string $lang = User::LANG_UZ): array
     {
         $isModerator = $meeting->group->moderator_user_id === $viewer->id;
+        // Kotib ham uchrashuvni boshlashi mumkin (davomatni odatda u belgilaydi — Moderator hozir bo'lmasa ham
+        // ish to'xtab qolmasligi uchun), lekin tahrirlash/bekor qilish faqat Moderatorga tegishli.
+        $isKotib = !$isModerator && $this->isKotibInGroup($meeting->group, $viewer);
+        $isTrening = $meeting->group->isUmumiy();
         $rows = [];
 
+        $l = match ($lang) {
+            User::LANG_RU => [
+                'finish' => $isTrening ? "🏁 Завершить тренинг" : "🏁 Завершить встречу",
+                'start' => $isTrening ? "▶️ Начать тренинг" : "▶️ Начать встречу",
+                'edit' => "✏️ Редактировать",
+                'cancel' => "❌ Отменить",
+            ],
+            User::LANG_UZ_CYRL => [
+                'finish' => "🏁 " . ($isTrening ? 'Тренингни' : 'Учрашувни') . " якунлаш",
+                'start' => "▶️ " . ($isTrening ? 'Тренингни' : 'Учрашувни') . " бошлаш",
+                'edit' => "✏️ Таҳрирлаш",
+                'cancel' => "❌ Бекор қилиш",
+            ],
+            default => [
+                'finish' => "🏁 " . ($isTrening ? 'Treningni' : 'Uchrashuvni') . " yakunlash",
+                'start' => "▶️ " . ($isTrening ? 'Treningni' : 'Uchrashuvni') . " boshlash",
+                'edit' => "✏️ Tahrirlash",
+                'cancel' => "❌ Bekor qilish",
+            ],
+        };
+
         if ($meeting->status === Meeting::STATUS_ATTENDANCE_MARKING) {
-            $rows[] = [['text' => "🏁 Uchrashuvni yakunlash", 'callback_data' => "mfinish:{$meeting->id}"]];
+            $rows[] = [['text' => $l['finish'], 'callback_data' => "mfinish:{$meeting->id}"]];
         }
 
-        if ($isModerator) {
-            if ($meeting->status === Meeting::STATUS_ANNOUNCED) {
-                $rows[] = [['text' => "▶️ Uchrashuvni boshlash", 'callback_data' => "mstart:{$meeting->id}"]];
-            }
-            if (in_array($meeting->status, [Meeting::STATUS_ANNOUNCED, Meeting::STATUS_ATTENDANCE_MARKING], true)) {
-                $rows[] = [
-                    ['text' => "✏️ Tahrirlash", 'callback_data' => "medit:{$meeting->id}"],
-                    ['text' => "❌ Bekor qilish", 'callback_data' => "mcancel:ask:{$meeting->id}"],
-                ];
-            }
+        if (($isModerator || $isKotib) && $meeting->status === Meeting::STATUS_ANNOUNCED) {
+            $rows[] = [['text' => $l['start'], 'callback_data' => "mstart:{$meeting->id}"]];
+        }
+
+        if ($isModerator && in_array($meeting->status, [Meeting::STATUS_ANNOUNCED, Meeting::STATUS_ATTENDANCE_MARKING], true)) {
+            $rows[] = [
+                ['text' => $l['edit'], 'callback_data' => "medit:{$meeting->id}"],
+                ['text' => $l['cancel'], 'callback_data' => "mcancel:ask:{$meeting->id}"],
+            ];
         }
 
         return $rows;
@@ -930,11 +1198,11 @@ class BotHandler
             return;
         }
 
-        $this->api->sendMessage($chatId, $this->meetingCardText($meeting), $this->meetingCardKeyboard($meeting, $viewer));
+        $this->api->sendMessage($chatId, $this->meetingCardText($meeting, $viewer->language), $this->meetingCardKeyboard($meeting, $viewer, $viewer->language));
     }
 
     /** Faqat davomat ro'yxati — «✅ Davomat» bo'limi orqali ochiladi (Kotib/Moderator uchun alohida ekran). */
-    private function attendanceMarkingKeyboard(Meeting $meeting): array
+    private function attendanceMarkingKeyboard(Meeting $meeting, string $lang = User::LANG_UZ): array
     {
         $participants = $meeting->getParticipantsWithRoles();
         $attendances = $meeting->getAttendances()->indexBy('user_id')->all();
@@ -942,12 +1210,28 @@ class BotHandler
         $rows = [];
         foreach ($participants as $uid => $row) {
             $status = $attendances[$uid]->status ?? null;
-            $label = $row['user']->full_name . ' — ' . Texts::attendanceRowStatus((string) $status);
+            $label = $row['user']->full_name . ' — ' . Texts::attendanceRowStatus($lang, (string) $status);
             $rows[] = [['text' => $label, 'callback_data' => "att:{$meeting->id}:{$uid}"]];
         }
-        $rows[] = [['text' => "🎫 Mehmon qo'shish", 'callback_data' => "agst:{$meeting->id}"]];
-        $word = $meeting->group->isUmumiy() ? 'Treningni' : 'Uchrashuvni';
-        $rows[] = [['text' => "🏁 {$word} yakunlash", 'callback_data' => "mfinish:{$meeting->id}"]];
+        $guestBtn = match ($lang) {
+            User::LANG_RU => "👤 Добавить гостя",
+            User::LANG_UZ_CYRL => "👤 Меҳмон қўшиш",
+            default => "👤 Mehmon qo'shish",
+        };
+        $rows[] = [['text' => $guestBtn, 'callback_data' => "agst:{$meeting->id}"]];
+        $rolesBtn = match ($lang) {
+            User::LANG_RU => "✏️ Назначить роли",
+            User::LANG_UZ_CYRL => "✏️ Рولларни белгилаш",
+            default => "✏️ Rollarni belgilash",
+        };
+        $rows[] = [['text' => $rolesBtn, 'callback_data' => "mrp:{$meeting->id}"]];
+        $isTrening = $meeting->group->isUmumiy();
+        $finishBtn = match ($lang) {
+            User::LANG_RU => $isTrening ? "🏁 Завершить тренинг" : "🏁 Завершить встречу",
+            User::LANG_UZ_CYRL => "🏁 " . ($isTrening ? 'Тренингни' : 'Учрашувни') . " якунлаш",
+            default => "🏁 " . ($isTrening ? 'Treningni' : 'Uchrashuvni') . " yakunlash",
+        };
+        $rows[] = [['text' => $finishBtn, 'callback_data' => "mfinish:{$meeting->id}"]];
 
         return $rows;
     }
@@ -966,18 +1250,24 @@ class BotHandler
         }
 
         UserState::set($user->telegram_id, 'meeting_wait_guest_name', ['meeting_id' => $meetingId]);
-        $this->api->sendMessage(
-            $chatId,
-            "🎫 Mehmonning F.I.Sh.ini yozing (ro'yxatdan o'tmagan, boshqa jamoa/guruhdan bo'lishi mumkin):",
-            $this->cancelKeyboard()
-        );
+        $prompt = match ($user->language) {
+            User::LANG_RU => "👤 Введите Ф.И.О. гостя (не зарегистрирован, может быть из другой команды/группы):",
+            User::LANG_UZ_CYRL => "👤 Меҳмоннинг Ф.И.Ш.ини ёзинг (рўйхатдан ўтмаган, бошқа жамоа/гуруҳдан бўлиши мумкин):",
+            default => "👤 Mehmonning F.I.Sh.ini yozing (ro'yxatdan o'tmagan, boshqa jamoa/guruhdan bo'lishi mumkin):",
+        };
+        $this->api->sendMessage($chatId, $prompt, $this->cancelKeyboard($user->language));
     }
 
     private function handleGuestNameInput(int $chatId, User $user, UserState $state, string $text): void
     {
         $fullName = trim($text);
         if ($fullName === '') {
-            $this->api->sendMessage($chatId, "Ism bo'sh bo'lmasligi kerak. Qaytadan yozing:", $this->cancelKeyboard());
+            $emptyName = match ($user->language) {
+                User::LANG_RU => "Имя не может быть пустым. Введите заново:",
+                User::LANG_UZ_CYRL => "Исм бўш бўлмаслиги керак. Қайтадан ёзинг:",
+                default => "Ism bo'sh bo'lmasligi kerak. Qaytadan yozing:",
+            };
+            $this->api->sendMessage($chatId, $emptyName, $this->cancelKeyboard($user->language));
 
             return;
         }
@@ -1001,33 +1291,163 @@ class BotHandler
             'role_id' => (int) $mehmonRoleId,
         ]))->save(false);
 
-        $this->api->sendMessage($chatId, "✅ «{$fullName}» mehmon sifatida qo'shildi. Endi davomatini belgilang:");
-        $this->openAttendanceMarking($chatId, $meeting->id);
+        $added = match ($user->language) {
+            User::LANG_RU => "✅ «{$fullName}» добавлен(а) как гость. Теперь отметьте посещаемость:",
+            User::LANG_UZ_CYRL => "✅ «{$fullName}» меҳмон сифатида қўшилди. Энди давоматини белгиланг:",
+            default => "✅ «{$fullName}» mehmon sifatida qo'shildi. Endi davomatini belgilang:",
+        };
+        $this->api->sendMessage($chatId, $added);
+        $this->openAttendanceMarking($chatId, $user, $meeting->id);
     }
 
-    private function openAttendanceMarking(int $chatId, int $meetingId): void
+    /**
+     * Har bir uchrashuvda odamning roli har xil bo'lishi mumkin (Moderatordan tashqari) — shuning
+     * uchun «✏️ Rollarni belgilash» orqali avval ishtirokchi tanlanadi, so'ng o'sha kishining
+     * SHU uchrashuvdagi roli (guruh shabloniga tegmasdan) belgilanadi.
+     */
+    private function showMeetingRolePicker(int $chatId, User $user, int $meetingId): void
+    {
+        $meeting = Meeting::findOne($meetingId);
+        if ($meeting === null) {
+            return;
+        }
+
+        $group = $meeting->group;
+        if ($group->moderator_user_id !== $user->id && !$this->isKotibInGroup($group, $user)) {
+            return;
+        }
+
+        $participants = $meeting->getParticipantsWithRoles();
+        $rows = [];
+        foreach ($participants as $uid => $row) {
+            if ($uid === $group->moderator_user_id) {
+                continue;
+            }
+            $label = Role::formatPerson($row['user']->full_name, $row['roles']);
+            $rows[] = [['text' => $label, 'callback_data' => "mrs:{$meetingId}:{$uid}"]];
+        }
+
+        if (!$rows) {
+            return;
+        }
+
+        $prompt = match ($user->language) {
+            User::LANG_RU => "✏️ Кому назначаем роль?",
+            User::LANG_UZ_CYRL => "✏️ Кимга рол белгилаймиз?",
+            default => "✏️ Kimga rol belgilaymiz?",
+        };
+        $this->api->sendMessage($chatId, $prompt, $rows);
+    }
+
+    private function meetingRoleKeyboard(int $meetingId, int $userId, string $lang): array
+    {
+        $selected = MeetingUserRole::roleIdsFor($meetingId, $userId);
+        $rows = [];
+        foreach (Role::assignable() as $role) {
+            $checked = in_array($role->id, $selected, true);
+            $rows[] = [[
+                'text' => ($checked ? '☑ ' : '☐ ') . $role->label(),
+                'callback_data' => "mrt:{$meetingId}:{$userId}:{$role->id}",
+            ]];
+        }
+        $back = match ($lang) {
+            User::LANG_RU => '⬅️ Назад',
+            User::LANG_UZ_CYRL => '⬅️ Орқага',
+            default => '⬅️ Orqaga',
+        };
+        $rows[] = [['text' => $back, 'callback_data' => "mrp:{$meetingId}"]];
+
+        return $rows;
+    }
+
+    private function openMeetingRoleScreen(int $chatId, User $user, int $meetingId, int $userId): void
+    {
+        $meeting = Meeting::findOne($meetingId);
+        if ($meeting === null) {
+            return;
+        }
+
+        $group = $meeting->group;
+        if ($group->moderator_user_id !== $user->id && !$this->isKotibInGroup($group, $user)) {
+            return;
+        }
+        if ($userId === $group->moderator_user_id) {
+            return;
+        }
+
+        $member = User::findOne($userId);
+        if ($member === null) {
+            return;
+        }
+
+        $setRoles = match ($user->language) {
+            User::LANG_RU => "Назначьте роль(и) на эту встречу:",
+            User::LANG_UZ_CYRL => "Шу учрашув учун рол(лар)ни белгиланг:",
+            default => "Shu uchrashuv uchun rol(lar)ni belgilang:",
+        };
+        $this->api->sendMessage(
+            $chatId,
+            "<b>{$member->full_name}</b>\n{$setRoles}",
+            $this->meetingRoleKeyboard($meetingId, $userId, $user->language)
+        );
+    }
+
+    private function toggleMeetingRole(int $chatId, int $messageId, User $user, int $meetingId, int $userId, int $roleId): void
+    {
+        $meeting = Meeting::findOne($meetingId);
+        if ($meeting === null) {
+            return;
+        }
+
+        $group = $meeting->group;
+        if ($group->moderator_user_id !== $user->id && !$this->isKotibInGroup($group, $user)) {
+            return;
+        }
+        if ($userId === $group->moderator_user_id) {
+            return;
+        }
+
+        MeetingUserRole::toggleAndNormalize($meetingId, $userId, $roleId);
+
+        $this->api->editMessageReplyMarkup($chatId, $messageId, $this->meetingRoleKeyboard($meetingId, $userId, $user->language));
+    }
+
+    private function openAttendanceMarking(int $chatId, User $user, int $meetingId): void
     {
         $meeting = Meeting::findOne($meetingId);
         if ($meeting === null || $meeting->status !== Meeting::STATUS_ATTENDANCE_MARKING) {
             return;
         }
 
+        $hint = match ($user->language) {
+            User::LANG_RU => "\n\nОтметьте посещаемость участников:",
+            User::LANG_UZ_CYRL => "\n\nИштирокчилар давоматини белгиланг:",
+            default => "\n\nIshtirokchilar davomatini belgilang:",
+        };
         $this->api->sendMessage(
             $chatId,
-            $this->meetingCardText($meeting) . "\n\nIshtirokchilar davomatini belgilang:",
-            $this->attendanceMarkingKeyboard($meeting)
+            $this->meetingCardText($meeting, $user->language) . $hint,
+            $this->attendanceMarkingKeyboard($meeting, $user->language)
         );
     }
 
     /**
-     * Faqat Moderator boshlashi mumkin. Boshlagach started_at yoziladi va status attendance_marking bo'ladi,
-     * lekin davomat ro'yxati BU YERDA ko'rsatilmaydi — Moderatorga faqat lifecycle kartasi qaytariladi.
-     * Davomatni boshqa odam (Kotib) «✅ Davomat» bo'limi orqali alohida belgilaydi.
+     * Moderator yoki Kotib boshlashi mumkin (davomatni odatda Kotib belgilaydi, shuning uchun
+     * Moderator hozir bo'lmasa ham u boshlab, ishni to'xtatib qo'ymasligi kerak). Boshlagach
+     * started_at yoziladi va status attendance_marking bo'ladi, lekin davomat ro'yxati BU YERDA
+     * ko'rsatilmaydi — faqat lifecycle kartasi qaytariladi; davomatni «✅ Davomat» bo'limi orqali
+     * alohida belgilanadi.
      */
     private function startMeeting(int $chatId, User $user, int $meetingId): void
     {
         $meeting = Meeting::findOne($meetingId);
-        if ($meeting === null || $meeting->group->moderator_user_id !== $user->id || $meeting->status !== Meeting::STATUS_ANNOUNCED) {
+        if ($meeting === null || $meeting->status !== Meeting::STATUS_ANNOUNCED) {
+            return;
+        }
+
+        $group = $meeting->group;
+        $isModerator = $group->moderator_user_id === $user->id;
+        if (!$isModerator && !$this->isKotibInGroup($group, $user)) {
             return;
         }
 
@@ -1037,12 +1457,20 @@ class BotHandler
             ->andWhere(['status' => Meeting::STATUS_ATTENDANCE_MARKING])
             ->exists();
         if ($alreadyActive) {
-            $word = $meeting->group->isUmumiy() ? 'trening' : 'uchrashuv';
-            $this->api->sendMessage(
-                $chatId,
-                "⚠️ Guruhda allaqachon boshlangan (davom etayotgan) boshqa {$word} bor. "
-                . "Avval o'shani yakunlang, keyin bu {$word}ni boshlashingiz mumkin."
-            );
+            $isTrening = $meeting->group->isUmumiy();
+            $text = match (true) {
+                $user->language === User::LANG_RU && $isTrening => "⚠️ В группе уже идёт другой тренинг. "
+                    . "Сначала завершите его, затем сможете начать этот.",
+                $user->language === User::LANG_RU => "⚠️ В группе уже идёт другая встреча. "
+                    . "Сначала завершите её, затем сможете начать эту.",
+                $user->language === User::LANG_UZ_CYRL => "⚠️ Гуруҳда аллақачон бошланган (давом этаётган) бошқа "
+                    . ($isTrening ? 'тренинг' : 'учрашув') . " бор. Аввал ўшани якунланг, кейин бу "
+                    . ($isTrening ? 'тренинг' : 'учрашув') . "ни бошлашингиз мумкин.",
+                default => "⚠️ Guruhda allaqachon boshlangan (davom etayotgan) boshqa "
+                    . ($isTrening ? 'trening' : 'uchrashuv') . " bor. Avval o'shani yakunlang, keyin bu "
+                    . ($isTrening ? 'trening' : 'uchrashuv') . "ni boshlashingiz mumkin.",
+            };
+            $this->api->sendMessage($chatId, $text);
 
             return;
         }
@@ -1051,7 +1479,7 @@ class BotHandler
         $meeting->started_at = date('Y-m-d H:i:s');
         $meeting->save(false);
 
-        $this->api->sendMessage($chatId, $this->meetingCardText($meeting), $this->meetingCardKeyboard($meeting, $user));
+        $this->api->sendMessage($chatId, $this->meetingCardText($meeting, $user->language), $this->meetingCardKeyboard($meeting, $user, $user->language));
     }
 
     // -------------------------------------------------------- meeting edit
@@ -1066,11 +1494,16 @@ class BotHandler
             return;
         }
 
-        $this->api->sendMessage($chatId, "«{$meeting->topic}» — nimani tahrirlaymiz?", [
-            [['text' => '📌 Mavzu', 'callback_data' => "eft:{$meeting->id}"]],
-            [['text' => '📅 Sana va vaqt', 'callback_data' => "efd:{$meeting->id}"]],
-            [['text' => '📍 Format', 'callback_data' => "eff:{$meeting->id}"]],
-            [['text' => '⬅️ Orqaga', 'callback_data' => "mopen:{$meeting->id}"]],
+        $editMenu = match ($user->language) {
+            User::LANG_RU => ['title' => "«{$meeting->topic}» — что редактируем?", 'topic' => '📌 Тема', 'date' => '📅 Дата и время', 'format' => '📍 Формат', 'back' => '⬅️ Назад'],
+            User::LANG_UZ_CYRL => ['title' => "«{$meeting->topic}» — нимани таҳрирлаймиз?", 'topic' => '📌 Мавзу', 'date' => '📅 Сана ва вақт', 'format' => '📍 Формат', 'back' => '⬅️ Орқага'],
+            default => ['title' => "«{$meeting->topic}» — nimani tahrirlaymiz?", 'topic' => '📌 Mavzu', 'date' => '📅 Sana va vaqt', 'format' => '📍 Format', 'back' => '⬅️ Orqaga'],
+        };
+        $this->api->sendMessage($chatId, $editMenu['title'], [
+            [['text' => $editMenu['topic'], 'callback_data' => "eft:{$meeting->id}"]],
+            [['text' => $editMenu['date'], 'callback_data' => "efd:{$meeting->id}"]],
+            [['text' => $editMenu['format'], 'callback_data' => "eff:{$meeting->id}"]],
+            [['text' => $editMenu['back'], 'callback_data' => "mopen:{$meeting->id}"]],
         ]);
     }
 
@@ -1082,14 +1515,24 @@ class BotHandler
         }
 
         UserState::set($user->telegram_id, 'meeting_edit_topic', ['meeting_id' => $meetingId]);
-        $this->api->sendMessage($chatId, "Yangi mavzuni yozing (hozirgi: «{$meeting->topic}»):", $this->cancelKeyboard());
+        $prompt = match ($user->language) {
+            User::LANG_RU => "Введите новую тему (текущая: «{$meeting->topic}»):",
+            User::LANG_UZ_CYRL => "Янги мавзуни ёзинг (ҳозирги: «{$meeting->topic}»):",
+            default => "Yangi mavzuni yozing (hozirgi: «{$meeting->topic}»):",
+        };
+        $this->api->sendMessage($chatId, $prompt, $this->cancelKeyboard($user->language));
     }
 
     private function handleEditTopicInput(int $chatId, User $user, UserState $state, string $text): void
     {
         $text = trim($text);
         if ($text === '') {
-            $this->api->sendMessage($chatId, "Mavzu bo'sh bo'lmasligi kerak. Qaytadan yozing:", $this->cancelKeyboard());
+            $emptyTopic = match ($user->language) {
+                User::LANG_RU => "Тема не может быть пустой. Введите заново:",
+                User::LANG_UZ_CYRL => "Мавзу бўш бўлмаслиги керак. Қайтадан ёзинг:",
+                default => "Mavzu bo'sh bo'lmasligi kerak. Qaytadan yozing:",
+            };
+            $this->api->sendMessage($chatId, $emptyTopic, $this->cancelKeyboard($user->language));
 
             return;
         }
@@ -1104,7 +1547,12 @@ class BotHandler
         $meeting->topic = $text;
         $meeting->save(false);
 
-        $this->api->sendMessage($chatId, "✅ Mavzu yangilandi.");
+        $updated = match ($user->language) {
+            User::LANG_RU => "✅ Тема обновлена.",
+            User::LANG_UZ_CYRL => "✅ Мавзу янгиланди.",
+            default => "✅ Mavzu yangilandi.",
+        };
+        $this->api->sendMessage($chatId, $updated);
         $this->openMeetingCard($chatId, $user, $meeting->id);
     }
 
@@ -1116,18 +1564,20 @@ class BotHandler
         }
 
         UserState::set($user->telegram_id, 'meeting_edit_date', ['meeting_id' => $meetingId]);
-        $this->api->sendMessage(
-            $chatId,
-            "Yangi sana va vaqtni yozing (hozirgi: " . Texts::formatDate($meeting->meeting_at) . ").\n" . Texts::askMeetingDate(),
-            $this->cancelKeyboard()
-        );
+        $current = Texts::formatDate($meeting->meeting_at);
+        $prompt = match ($user->language) {
+            User::LANG_RU => "Введите новую дату и время (текущая: {$current}).\n" . Texts::askMeetingDate($user->language),
+            User::LANG_UZ_CYRL => "Янги сана ва вақтни ёзинг (ҳозирги: {$current}).\n" . Texts::askMeetingDate($user->language),
+            default => "Yangi sana va vaqtni yozing (hozirgi: {$current}).\n" . Texts::askMeetingDate($user->language),
+        };
+        $this->api->sendMessage($chatId, $prompt, $this->cancelKeyboard($user->language));
     }
 
     private function handleEditDateInput(int $chatId, User $user, UserState $state, string $text): void
     {
         $dt = $this->parseMeetingDate($text);
         if (!$dt) {
-            $this->api->sendMessage($chatId, Texts::invalidDate(), $this->cancelKeyboard());
+            $this->api->sendMessage($chatId, Texts::invalidDate($user->language), $this->cancelKeyboard($user->language));
 
             return;
         }
@@ -1142,7 +1592,12 @@ class BotHandler
         $meeting->meeting_at = $dt->format('Y-m-d H:i:s');
         $meeting->save(false);
 
-        $this->api->sendMessage($chatId, "✅ Sana/vaqt yangilandi.");
+        $updated = match ($user->language) {
+            User::LANG_RU => "✅ Дата и время обновлены.",
+            User::LANG_UZ_CYRL => "✅ Сана/вақт янгиланди.",
+            default => "✅ Sana/vaqt yangilandi.",
+        };
+        $this->api->sendMessage($chatId, $updated);
         $this->openMeetingCard($chatId, $user, $meeting->id);
     }
 
@@ -1153,12 +1608,17 @@ class BotHandler
             return;
         }
 
-        $this->api->sendMessage($chatId, "Yangi formatni tanlang:", [
+        $prompt = match ($user->language) {
+            User::LANG_RU => "Выберите новый формат:",
+            User::LANG_UZ_CYRL => "Янги форматни танланг:",
+            default => "Yangi formatni tanlang:",
+        };
+        $this->api->sendMessage($chatId, $prompt, [
             [
-                ['text' => 'Oflayn', 'callback_data' => "efs:{$meetingId}:offline"],
-                ['text' => 'Onlayn', 'callback_data' => "efs:{$meetingId}:online"],
+                ['text' => Texts::formatLabel(Meeting::FORMAT_OFFLINE, $user->language), 'callback_data' => "efs:{$meetingId}:offline"],
+                ['text' => Texts::formatLabel(Meeting::FORMAT_ONLINE, $user->language), 'callback_data' => "efs:{$meetingId}:online"],
             ],
-            ...$this->cancelKeyboard(),
+            ...$this->cancelKeyboard($user->language),
         ]);
     }
 
@@ -1172,7 +1632,12 @@ class BotHandler
         $meeting->format = $format;
         $meeting->save(false);
 
-        $this->api->sendMessage($chatId, "✅ Format yangilandi.");
+        $updated = match ($user->language) {
+            User::LANG_RU => "✅ Формат обновлён.",
+            User::LANG_UZ_CYRL => "✅ Формат янгиланди.",
+            default => "✅ Format yangilandi.",
+        };
+        $this->api->sendMessage($chatId, $updated);
         $this->openMeetingCard($chatId, $user, $meeting->id);
     }
 
@@ -1188,19 +1653,25 @@ class BotHandler
         }
 
         UserState::set($user->telegram_id, 'meeting_wait_cancel_reason', ['meeting_id' => $meetingId]);
-        $word = $meeting->group->isUmumiy() ? 'trening' : 'uchrashuv';
-        $this->api->sendMessage(
-            $chatId,
-            "«{$meeting->topic}» {$word}ini bekor qilish sababini yozing:",
-            $this->cancelKeyboard()
-        );
+        $isTrening = $meeting->group->isUmumiy();
+        $prompt = match (true) {
+            $user->language === User::LANG_RU => "Введите причину отмены «{$meeting->topic}»:",
+            $user->language === User::LANG_UZ_CYRL => "«{$meeting->topic}» " . ($isTrening ? 'тренинг' : 'учрашув') . "ини бекор қилиш сабабини ёзинг:",
+            default => "«{$meeting->topic}» " . ($isTrening ? 'trening' : 'uchrashuv') . "ini bekor qilish sababini yozing:",
+        };
+        $this->api->sendMessage($chatId, $prompt, $this->cancelKeyboard($user->language));
     }
 
     private function handleCancelReasonInput(int $chatId, User $user, UserState $state, string $text): void
     {
         $text = trim($text);
         if ($text === '') {
-            $this->api->sendMessage($chatId, "Sababni bo'sh qoldirib bo'lmaydi. Qaytadan yozing:", $this->cancelKeyboard());
+            $emptyReason = match ($user->language) {
+                User::LANG_RU => "Причину нельзя оставить пустой. Введите заново:",
+                User::LANG_UZ_CYRL => "Сабабни бўш қолдириб бўлмайди. Қайтадан ёзинг:",
+                default => "Sababni bo'sh qoldirib bo'lmaydi. Qaytadan yozing:",
+            };
+            $this->api->sendMessage($chatId, $emptyReason, $this->cancelKeyboard($user->language));
 
             return;
         }
@@ -1216,13 +1687,28 @@ class BotHandler
         $context['reason'] = $text;
         UserState::set($user->telegram_id, 'meeting_confirm_cancel', $context);
 
+        $date = Texts::formatDate($meeting->meeting_at);
+        $confirm = match ($user->language) {
+            User::LANG_RU => [
+                "⚠️ Вы действительно хотите отменить?\n\n«{$meeting->topic}» — {$date}\nПричина: {$text}",
+                "✅ Да, отменить", "❌ Нет",
+            ],
+            User::LANG_UZ_CYRL => [
+                "⚠️ Ростдан ҳам бекор қиласизми?\n\n«{$meeting->topic}» — {$date}\nСабаб: {$text}",
+                "✅ Ҳа, бекор қилиш", "❌ Йўқ",
+            ],
+            default => [
+                "⚠️ Rostdan ham bekor qilasizmi?\n\n«{$meeting->topic}» — {$date}\nSabab: {$text}",
+                "✅ Ha, bekor qilish", "❌ Yo'q",
+            ],
+        };
+
         $this->api->sendMessage(
             $chatId,
-            "⚠️ Rostdan ham bekor qilasizmi?\n\n«{$meeting->topic}» — " . Texts::formatDate($meeting->meeting_at)
-                . "\nSabab: {$text}",
+            $confirm[0],
             [[
-                ['text' => "✅ Ha, bekor qilish", 'callback_data' => 'mcancel:confirm'],
-                ['text' => "❌ Yo'q", 'callback_data' => 'mcancel:abort'],
+                ['text' => $confirm[1], 'callback_data' => 'mcancel:confirm'],
+                ['text' => $confirm[2], 'callback_data' => 'mcancel:abort'],
             ]]
         );
     }
@@ -1247,33 +1733,48 @@ class BotHandler
         $meeting->save(false);
 
         $post = $this->api->sendMessage($group->channel_id, Texts::meetingCancelledAnnouncement($meeting, $reason));
-        $warning = empty($post['ok']) ? "\n\n⚠️ Kanalga yubora olmadik: bot kanalda admin emas yoki kanal ID noto'g'ri." : '';
+        $failWarning = match ($user->language) {
+            User::LANG_RU => "\n\n⚠️ Не удалось отправить в канал: бот не администратор канала либо неверный ID канала.",
+            User::LANG_UZ_CYRL => "\n\n⚠️ Каналга юбора олмадик: бот каналда админ эмас ёки канал ID нотўғри.",
+            default => "\n\n⚠️ Kanalga yubora olmadik: bot kanalda admin emas yoki kanal ID noto'g'ri.",
+        };
+        $warning = empty($post['ok']) ? $failWarning : '';
 
-        $word = $group->isUmumiy() ? 'Trening' : 'Uchrashuv';
-        $this->sendMainMenu($chatId, $user, $group, "❌ {$word} bekor qilindi: «{$meeting->topic}»." . $warning);
+        $cancelled = match (true) {
+            $user->language === User::LANG_RU && $group->isUmumiy() => "❌ Тренинг отменён: «{$meeting->topic}».",
+            $user->language === User::LANG_RU => "❌ Встреча отменена: «{$meeting->topic}».",
+            $user->language === User::LANG_UZ_CYRL => "❌ " . ($group->isUmumiy() ? 'Тренинг' : 'Учрашув') . " бекор қилинди: «{$meeting->topic}».",
+            default => "❌ " . ($group->isUmumiy() ? 'Trening' : 'Uchrashuv') . " bekor qilindi: «{$meeting->topic}».",
+        };
+        $this->sendMainMenu($chatId, $user, $group, $cancelled . $warning);
     }
 
     private function abortCancelMeeting(int $chatId, User $user, ?Group $group): void
     {
         UserState::clear($user->telegram_id);
-        $this->sendMainMenu($chatId, $user, $group, "Bekor qilinmadi.");
+        $notCancelled = match ($user->language) {
+            User::LANG_RU => "Не отменено.",
+            User::LANG_UZ_CYRL => "Бекор қилинмади.",
+            default => "Bekor qilinmadi.",
+        };
+        $this->sendMainMenu($chatId, $user, $group, $notCancelled);
     }
 
     private function startMeetingCreation(int $chatId, User $user, ?Group $group): void
     {
         if ($group === null) {
-            $this->api->sendMessage($chatId, Texts::noGroup());
+            $this->api->sendMessage($chatId, Texts::noGroup($user->language));
 
             return;
         }
         if ($group->moderator_user_id !== $user->id) {
-            $this->api->sendMessage($chatId, Texts::onlyModerator());
+            $this->api->sendMessage($chatId, Texts::onlyModerator($user->language));
 
             return;
         }
 
         UserState::set($user->telegram_id, 'meeting_wait_topic', ['group_id' => $group->id]);
-        $this->api->sendMessage($chatId, Texts::askMeetingTopic($group->isUmumiy()), $this->cancelKeyboard());
+        $this->api->sendMessage($chatId, Texts::askMeetingTopic($user->language, $group->isUmumiy()), $this->cancelKeyboard($user->language));
     }
 
     /**
@@ -1302,7 +1803,7 @@ class BotHandler
     {
         $dt = $this->parseMeetingDate($text);
         if (!$dt) {
-            $this->api->sendMessage($chatId, Texts::invalidDate(), $this->cancelKeyboard());
+            $this->api->sendMessage($chatId, Texts::invalidDate($user->language), $this->cancelKeyboard($user->language));
 
             return;
         }
@@ -1316,9 +1817,12 @@ class BotHandler
         UserState::set($user->telegram_id, 'meeting_wait_format', $context);
 
         $isTrening = Group::findOne($context['group_id'] ?? null)?->isUmumiy() ?? false;
-        $this->api->sendMessage($chatId, Texts::askMeetingFormat($isTrening), [
-            [['text' => 'Oflayn', 'callback_data' => 'fmt:offline'], ['text' => 'Onlayn', 'callback_data' => 'fmt:online']],
-            ...$this->cancelKeyboard(),
+        $this->api->sendMessage($chatId, Texts::askMeetingFormat($user->language, $isTrening), [
+            [
+                ['text' => Texts::formatLabel(Meeting::FORMAT_OFFLINE, $user->language), 'callback_data' => 'fmt:offline'],
+                ['text' => Texts::formatLabel(Meeting::FORMAT_ONLINE, $user->language), 'callback_data' => 'fmt:online'],
+            ],
+            ...$this->cancelKeyboard($user->language),
         ]);
     }
 
@@ -1329,13 +1833,29 @@ class BotHandler
     }
 
     /** Kalendar: bugundan boshlab keyingi 14 kun tugma sifatida (2 tadan qatorda), + qo'lda yozish imkoniyati. */
-    private function dayPickerKeyboard(): array
+    private function dayPickerKeyboard(string $lang = User::LANG_UZ): array
     {
+        $weekdays = match ($lang) {
+            User::LANG_RU => ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'],
+            User::LANG_UZ_CYRL => ['Як', 'Душ', 'Сеш', 'Чор', 'Пай', 'Жум', 'Шан'],
+            default => self::UZ_WEEKDAYS,
+        };
+        $months = match ($lang) {
+            User::LANG_RU => ['', 'янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'],
+            User::LANG_UZ_CYRL => ['', 'Январ', 'Феврал', 'Март', 'Апрел', 'Май', 'Июн', 'Июл', 'Август', 'Сентябр', 'Октябр', 'Ноябр', 'Декабр'],
+            default => self::UZ_MONTHS,
+        };
+        $customLabel = match ($lang) {
+            User::LANG_RU => "✏️ Другая дата (ввести вручную)",
+            User::LANG_UZ_CYRL => "✏️ Бошқа сана (қўлда ёзиш)",
+            default => "✏️ Boshqa sana (qo'lda yozish)",
+        };
+
         $rows = [];
         $row = [];
         for ($i = 0; $i < 14; $i++) {
             $d = (new \DateTime())->modify("+{$i} days");
-            $label = self::UZ_WEEKDAYS[(int) $d->format('w')] . ', ' . (int) $d->format('j') . '-' . self::UZ_MONTHS[(int) $d->format('n')];
+            $label = $weekdays[(int) $d->format('w')] . ', ' . (int) $d->format('j') . '-' . $months[(int) $d->format('n')];
             $row[] = ['text' => $label, 'callback_data' => 'day:' . $d->format('Y-m-d')];
             if (count($row) === 2) {
                 $rows[] = $row;
@@ -1345,13 +1865,13 @@ class BotHandler
         if ($row) {
             $rows[] = $row;
         }
-        $rows[] = [['text' => "✏️ Boshqa sana (qo'lda yozish)", 'callback_data' => 'day:custom']];
-        $rows[] = $this->cancelKeyboard()[0];
+        $rows[] = [['text' => $customLabel, 'callback_data' => 'day:custom']];
+        $rows[] = $this->cancelKeyboard($lang)[0];
 
         return $rows;
     }
 
-    private function timePickerKeyboard(): array
+    private function timePickerKeyboard(string $lang = User::LANG_UZ): array
     {
         $times = ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'];
         $rows = [];
@@ -1366,8 +1886,13 @@ class BotHandler
         if ($row) {
             $rows[] = $row;
         }
-        $rows[] = [['text' => "✏️ Boshqa vaqt (qo'lda yozish)", 'callback_data' => 'time:custom']];
-        $rows[] = $this->cancelKeyboard()[0];
+        $customLabel = match ($lang) {
+            User::LANG_RU => "✏️ Другое время (ввести вручную)",
+            User::LANG_UZ_CYRL => "✏️ Бошқа вақт (қўлда ёзиш)",
+            default => "✏️ Boshqa vaqt (qo'lda yozish)",
+        };
+        $rows[] = [['text' => $customLabel, 'callback_data' => 'time:custom']];
+        $rows[] = $this->cancelKeyboard($lang)[0];
 
         return $rows;
     }
@@ -1378,14 +1903,19 @@ class BotHandler
 
         if ($value === 'custom') {
             UserState::set($user->telegram_id, 'meeting_wait_date', $context);
-            $this->api->sendMessage($chatId, Texts::askMeetingDate(), $this->cancelKeyboard());
+            $this->api->sendMessage($chatId, Texts::askMeetingDate($user->language), $this->cancelKeyboard($user->language));
 
             return;
         }
 
         $context['day'] = $value;
         UserState::set($user->telegram_id, 'meeting_wait_time', $context);
-        $this->api->sendMessage($chatId, "Soatni tanlang:", $this->timePickerKeyboard());
+        $chooseTime = match ($user->language) {
+            User::LANG_RU => "Выберите время:",
+            User::LANG_UZ_CYRL => "Соатни танланг:",
+            default => "Soatni tanlang:",
+        };
+        $this->api->sendMessage($chatId, $chooseTime, $this->timePickerKeyboard($user->language));
     }
 
     private function handleTimePicked(int $chatId, User $user, UserState $state, string $value): void
@@ -1394,7 +1924,12 @@ class BotHandler
 
         if ($value === 'custom') {
             UserState::set($user->telegram_id, 'meeting_wait_time_custom', $context);
-            $this->api->sendMessage($chatId, "Soatni yozing (masalan 14:00):", $this->cancelKeyboard());
+            $enterTime = match ($user->language) {
+                User::LANG_RU => "Введите время (например 14:00):",
+                User::LANG_UZ_CYRL => "Соатни ёзинг (масалан 14:00):",
+                default => "Soatni yozing (masalan 14:00):",
+            };
+            $this->api->sendMessage($chatId, $enterTime, $this->cancelKeyboard($user->language));
 
             return;
         }
@@ -1409,14 +1944,24 @@ class BotHandler
 
     private function handleCustomTimeInput(int $chatId, User $user, UserState $state, string $text): void
     {
+        $invalidFormat = match ($user->language) {
+            User::LANG_RU => "❌ Неверный формат. Например: 14:00. Введите заново:",
+            User::LANG_UZ_CYRL => "❌ Нотўғри формат. Масалан: 14:00. Қайтадан киритинг:",
+            default => "❌ Noto'g'ri format. Masalan: 14:00. Qaytadan kiriting:",
+        };
         if (!preg_match('/^(\d{1,2})[:\s.](\d{1,2})$/u', trim($text), $m)) {
-            $this->api->sendMessage($chatId, "❌ Noto'g'ri format. Masalan: 14:00. Qaytadan kiriting:", $this->cancelKeyboard());
+            $this->api->sendMessage($chatId, $invalidFormat, $this->cancelKeyboard($user->language));
 
             return;
         }
         [, $hour, $minute] = $m;
         if ((int) $hour > 23 || (int) $minute > 59) {
-            $this->api->sendMessage($chatId, "❌ Noto'g'ri vaqt. Masalan: 14:00. Qaytadan kiriting:", $this->cancelKeyboard());
+            $invalidTime = match ($user->language) {
+                User::LANG_RU => "❌ Неверное время. Например: 14:00. Введите заново:",
+                User::LANG_UZ_CYRL => "❌ Нотўғри вақт. Масалан: 14:00. Қайтадан киритинг:",
+                default => "❌ Noto'g'ri vaqt. Masalan: 14:00. Qaytadan kiriting:",
+            };
+            $this->api->sendMessage($chatId, $invalidTime, $this->cancelKeyboard($user->language));
 
             return;
         }
@@ -1473,18 +2018,29 @@ class BotHandler
             return;
         }
 
+        if (str_starts_with($data, 'lang:')) {
+            $this->setLanguage($chatId, $user, substr($data, 5));
+
+            return;
+        }
+
         if ($data === 'cancelflow') {
             $meetingId = $state?->getContextData()['meeting_id'] ?? null;
             UserState::clear($user->telegram_id);
+            $cancelled = match ($user->language) {
+                User::LANG_RU => "❌ Отменено.",
+                User::LANG_UZ_CYRL => "❌ Бекор қилинди.",
+                default => "❌ Bekor qilindi.",
+            };
 
             if ($meetingId !== null) {
-                $this->api->sendMessage($chatId, "❌ Bekor qilindi.");
+                $this->api->sendMessage($chatId, $cancelled);
                 $this->openMeetingCard($chatId, $user, (int) $meetingId);
 
                 return;
             }
 
-            $this->sendMainMenu($chatId, $user, $user->is_observer ? null : $this->currentGroup($user), "❌ Bekor qilindi.");
+            $this->sendMainMenu($chatId, $user, $user->is_observer ? null : $this->currentGroup($user), $cancelled);
 
             return;
         }
@@ -1557,7 +2113,7 @@ class BotHandler
         }
 
         if (str_starts_with($data, 'att:open:')) {
-            $this->openAttendanceMarking($chatId, (int) substr($data, 9));
+            $this->openAttendanceMarking($chatId, $user, (int) substr($data, 9));
 
             return;
         }
@@ -1573,6 +2129,26 @@ class BotHandler
 
         if (str_starts_with($data, 'agst:')) {
             $this->askGuestName($chatId, $user, (int) substr($data, 5));
+
+            return;
+        }
+
+        if (str_starts_with($data, 'mrp:')) {
+            $this->showMeetingRolePicker($chatId, $user, (int) substr($data, 4));
+
+            return;
+        }
+
+        if (str_starts_with($data, 'mrs:')) {
+            [, $meetingId, $participantId] = explode(':', $data);
+            $this->openMeetingRoleScreen($chatId, $user, (int) $meetingId, (int) $participantId);
+
+            return;
+        }
+
+        if (str_starts_with($data, 'mrt:')) {
+            [, $meetingId, $participantId, $roleId] = explode(':', $data);
+            $this->toggleMeetingRole($chatId, $messageId, $user, (int) $meetingId, (int) $participantId, (int) $roleId);
 
             return;
         }
@@ -1597,7 +2173,12 @@ class BotHandler
             if ($group !== null) {
                 $member = User::findOne((int) $memberId);
                 if ($member !== null && $member->id !== $user->id) {
-                    $this->notifyMenuRefresh($member, $group, "🔄 Sizning guruhdagi rolingiz yangilandi. Yangi menyu:");
+                    $roleUpdated = match ($member->language) {
+                        User::LANG_RU => "🔄 Ваша роль в группе обновлена. Новое меню:",
+                        User::LANG_UZ_CYRL => "🔄 Сизнинг гуруҳдаги ролингиз янгиланди. Янги меню:",
+                        default => "🔄 Sizning guruhdagi rolingiz yangilandi. Yangi menyu:",
+                    };
+                    $this->notifyMenuRefresh($member, $group, $roleUpdated);
                 }
             }
             $this->showGroupMembers($chatId, $user, $group);
@@ -1654,7 +2235,12 @@ class BotHandler
 
         $members = $group->getMembers()->all();
         if (!$members) {
-            $this->api->sendMessage($chatId, "Guruhda a'zolar yo'q — avval a'zolarni qo'shing.");
+            $noMembers = match ($creator->language) {
+                User::LANG_RU => "В группе нет участников — сначала добавьте участников.",
+                User::LANG_UZ_CYRL => "Гуруҳда аъзолар йўқ — аввал аъзоларни қўшинг.",
+                default => "Guruhda a'zolar yo'q — avval a'zolarni qo'shing.",
+            };
+            $this->api->sendMessage($chatId, $noMembers);
             UserState::clear($creator->telegram_id);
 
             return;
@@ -1702,7 +2288,12 @@ class BotHandler
         } catch (\Throwable $e) {
             $transaction->rollBack();
             Yii::error('finalizeMeeting failed: ' . $e->getMessage());
-            $this->api->sendMessage($chatId, 'Xatolik yuz berdi, qaytadan urinib ko\'ring.');
+            $errorMsg = match ($creator->language) {
+                User::LANG_RU => 'Произошла ошибка, попробуйте ещё раз.',
+                User::LANG_UZ_CYRL => 'Хатолик юз берди, қайтадан уриниб кўринг.',
+                default => 'Xatolik yuz berdi, qaytadan urinib ko\'ring.',
+            };
+            $this->api->sendMessage($chatId, $errorMsg);
 
             return;
         }
@@ -1711,8 +2302,8 @@ class BotHandler
 
         $post = $this->api->sendMessage($group->channel_id, Texts::announcement($meeting));
         $menuText = empty($post['ok'])
-            ? Texts::meetingCreatedButChannelFailed($group->channel_id, $group->isUmumiy())
-            : Texts::meetingCreated($group->isUmumiy());
+            ? Texts::meetingCreatedButChannelFailed($creator->language, $group->channel_id, $group->isUmumiy())
+            : Texts::meetingCreated($creator->language, $group->isUmumiy());
         $this->sendMainMenu($chatId, $creator, $group, $menuText);
     }
 
@@ -1725,7 +2316,7 @@ class BotHandler
     private function showAttendanceMeetingList(int $chatId, User $user, ?Group $group): void
     {
         if ($group === null) {
-            $this->api->sendMessage($chatId, Texts::noGroup());
+            $this->api->sendMessage($chatId, Texts::noGroup($user->language));
 
             return;
         }
@@ -1752,14 +2343,19 @@ class BotHandler
         }
 
         if (!$eligible) {
-            $word = $group->isUmumiy() ? 'trening' : 'uchrashuv';
-            $Word = $group->isUmumiy() ? 'Trening' : 'Uchrashuv';
-            $upcomingBtn = $group->isUmumiy() ? self::BTN_UPCOMING_TRENING : self::BTN_UPCOMING;
-            $this->api->sendMessage(
-                $chatId,
-                "Hozircha davom etayotgan {$word} yo'q.\n"
-                . "({$Word}ni Moderator «{$upcomingBtn}» bo'limidan «▶️ Boshlash» tugmasi bilan boshlashi kerak.)"
-            );
+            $isTrening = $group->isUmumiy();
+            $upcomingBtn = $this->btnLabel('upcoming', $user->language, $isTrening);
+            $text = match (true) {
+                $user->language === User::LANG_RU && $isTrening => "Пока нет проходящего тренинга.\n"
+                    . "(Тренинг должен начать Модератор в разделе «{$upcomingBtn}» кнопкой «▶️ Начать».)",
+                $user->language === User::LANG_RU => "Пока нет проходящей встречи.\n"
+                    . "(Встречу должен начать Модератор в разделе «{$upcomingBtn}» кнопкой «▶️ Начать».)",
+                $user->language === User::LANG_UZ_CYRL => "Ҳозирча давом этаётган " . ($isTrening ? 'тренинг' : 'учрашув') . " йўқ.\n"
+                    . "(" . ($isTrening ? 'Тренинг' : 'Учрашув') . "ни Модератор «{$upcomingBtn}» бўлимидан «▶️ Бошлаш» тугмаси билан бошлаши керак.)",
+                default => "Hozircha davom etayotgan " . ($isTrening ? 'trening' : 'uchrashuv') . " yo'q.\n"
+                    . "(" . ($isTrening ? 'Trening' : 'Uchrashuv') . "ni Moderator «{$upcomingBtn}» bo'limidan «▶️ Boshlash» tugmasi bilan boshlashi kerak.)",
+            };
+            $this->api->sendMessage($chatId, $text);
 
             return;
         }
@@ -1767,7 +2363,7 @@ class BotHandler
         // Guruhda odatda bir vaqtda faqat bitta uchrashuv boradi — shuning uchun to'g'ridan-to'g'ri
         // davomat ekranini ochamiz, «qaysi uchrashuv» deb ortiqcha tanlov ko'rsatmaymiz.
         if (count($eligible) === 1) {
-            $this->openAttendanceMarking($chatId, $eligible[0]->id);
+            $this->openAttendanceMarking($chatId, $user, $eligible[0]->id);
 
             return;
         }
@@ -1777,8 +2373,14 @@ class BotHandler
             $rows[] = [['text' => Texts::formatDate($meeting->meeting_at) . ' — ' . $meeting->topic, 'callback_data' => "att:open:{$meeting->id}"]];
         }
 
-        $word = $group->isUmumiy() ? 'trening' : 'uchrashuv';
-        $this->api->sendMessage($chatId, "Qaysi {$word} uchun davomatni belgilaymiz?", $rows);
+        $isTrening = $group->isUmumiy();
+        $prompt = match (true) {
+            $user->language === User::LANG_RU && $isTrening => "Для какого тренинга отмечаем посещаемость?",
+            $user->language === User::LANG_RU => "Для какой встречи отмечаем посещаемость?",
+            $user->language === User::LANG_UZ_CYRL => "Қайси " . ($isTrening ? 'тренинг' : 'учрашув') . " учун давоматни белгилаймиз?",
+            default => "Qaysi " . ($isTrening ? 'trening' : 'uchrashuv') . " uchun davomatni belgilaymiz?",
+        };
+        $this->api->sendMessage($chatId, $prompt, $rows);
     }
 
     private function cycleAttendance(int $chatId, int $messageId, User $marker, int $meetingId, int $userId): void
@@ -1823,12 +2425,18 @@ class BotHandler
             $minEnd = (new \DateTime($meeting->started_at))->modify('+' . self::MIN_MEETING_DURATION_HOURS . ' hours');
             if (new \DateTime() < $minEnd) {
                 $leftMinutes = (int) ceil((strtotime($minEnd->format('Y-m-d H:i:s')) - time()) / 60);
-                $word = $group->isUmumiy() ? 'Trening' : 'Uchrashuv';
-                $this->api->sendMessage(
-                    $chatId,
-                    "⏳ {$word} kamida " . self::MIN_MEETING_DURATION_HOURS . " soat davom etishi kerak. "
-                        . "Yana {$leftMinutes} daqiqadan keyin yakunlashingiz mumkin."
-                );
+                $isTrening = $group->isUmumiy();
+                $text = match (true) {
+                    $user->language === User::LANG_RU => "⏳ "
+                        . ($isTrening ? "Тренинг" : "Встреча") . " должен(на) длиться минимум " . self::MIN_MEETING_DURATION_HOURS . " ч. "
+                        . "Завершить можно будет через {$leftMinutes} мин.",
+                    $user->language === User::LANG_UZ_CYRL => "⏳ " . ($isTrening ? 'Тренинг' : 'Учрашув') . " камида "
+                        . self::MIN_MEETING_DURATION_HOURS . " соат давом этиши керак. "
+                        . "Яна {$leftMinutes} дақиқадан кейин якунлашингиз мумкин.",
+                    default => "⏳ " . ($isTrening ? 'Trening' : 'Uchrashuv') . " kamida " . self::MIN_MEETING_DURATION_HOURS . " soat davom etishi kerak. "
+                        . "Yana {$leftMinutes} daqiqadan keyin yakunlashingiz mumkin.",
+                };
+                $this->api->sendMessage($chatId, $text);
 
                 return;
             }
@@ -1849,7 +2457,12 @@ class BotHandler
 
         $resultsText = Texts::meetingResults($meeting);
         $post = $this->api->sendMessage($group->channel_id, $resultsText);
-        $warning = empty($post['ok']) ? "\n\n⚠️ Kanalga yubora olmadik: bot kanalda admin emas yoki kanal ID noto'g'ri." : '';
-        $this->api->editMessageText($chatId, $messageId, Texts::attendanceSaved() . $warning . "\n\n" . $resultsText);
+        $failWarning = match ($user->language) {
+            User::LANG_RU => "\n\n⚠️ Не удалось отправить в канал: бот не администратор канала либо неверный ID канала.",
+            User::LANG_UZ_CYRL => "\n\n⚠️ Каналга юбора олмадик: бот каналда админ эмас ёки канал ID нотўғри.",
+            default => "\n\n⚠️ Kanalga yubora olmadik: bot kanalda admin emas yoki kanal ID noto'g'ri.",
+        };
+        $warning = empty($post['ok']) ? $failWarning : '';
+        $this->api->editMessageText($chatId, $messageId, Texts::attendanceSaved($user->language) . $warning . "\n\n" . $resultsText);
     }
 }

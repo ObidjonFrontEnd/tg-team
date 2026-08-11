@@ -1,6 +1,16 @@
 # Telegram-bot: uchrashuvlar va davomat (MVP)
 
-Yii2 + PostgreSQL bot. Interfeys — faqat o'zbek tilida. Batafsil talablar: [CLAUDE.md](./CLAUDE.md). Bosqichma-bosqich checklist: [PLAN.md](./PLAN.md).
+Yii2 + PostgreSQL bot. Botning shaxsiy interfeysi 3 tilda: o'zbek (lotin), o'zbek (kirill), ruscha — qarang «Til (multilingual)» bo'limi. Boshqaruv paneli — faqat o'zbek tilida. Batafsil talablar: [CLAUDE.md](./CLAUDE.md). Bosqichma-bosqich checklist: [PLAN.md](./PLAN.md).
+
+### Til (multilingual)
+
+Botning **shaxsiy** xabarlari (ro'yxatdan o'tish, tugmalar, so'rovlar, tasdiqlar) 3 tilda: 🇺🇿 o'zbek lotin (standart), 🇺🇿 o'zbek kirill, 🇷🇺 ruscha.
+- Birinchi `/start`da bot tilni so'raydi (inline tugmalar) — tanlangandan keyin ro'yxatdan o'tish o'sha tilda davom etadi.
+- Istalgan payt tilni almashtirish uchun **`/til`** buyrug'ini yuborish kifoya (Telegram'ning «/» buyruqlar menyusida ham ko'rinadi).
+- Mavjud (allaqachon ro'yxatdan o'tgan) foydalanuvchilar uchun standart til — o'zbek lotin, hech narsa o'zgarmaydi.
+- Rol nomlari (Moderator, Kotib, Jarayon eksperti va h.k.) va uchrashuv formati (Oflayn/Onlayn) atayin tarjima qilinmagan — ular qisqa domen atamalari sifatida barcha tillarda o'zbekcha qoladi.
+- **Kanal postlari** (e'lon, bekor qilish, natijalar, haftalik hisobot) — bularning barchasi **har doim faqat o'zbek tilida**, chunki kanalni butun guruh o'qiydi va "kimning tiliga" moslashtirish mumkin emas — u yerda "til" tushunchasi yo'q.
+- Boshqaruv paneli (admin panel) tarjima qilinmagan — u faqat administrator uchun, talab shunday.
 
 ## Lokal ishga tushirish (Docker)
 
@@ -45,7 +55,9 @@ Yaratilgandan keyin admin sifatida shu guruhga kerakli odamni **qo'lda qo'shib**
 2. Ochilgan «Davomat» sahifasida har bir ishtirokchi uchun Keldi/Kelmadi/Sababli belgilanadi.
 3. «🏁 Yakunlash va natijalarni kanalga joylashtirish» — belgilanmagan ishtirokchilar avtomatik «Kelmadi» bo'ladi, so'ng natijalar (kim keldi/kelmadi va qanday rolda) guruh kanaliga botning odatdagi «Uchrashuv yakunlari» formatida joylanadi. Yakunlangandan keyin ham davomatni tuzatish mumkin — tugma «🔁 Natijalarni qayta joylashtirish»ga aylanadi, bosilganda kanalga to'g'irlangan post qayta ketadi.
 
-Bir xil «Davomat» sahifasida (shu jumladan bot orqali, «✅ Davomat» ekranida ham) **«🎫 Mehmon qo'shish»** — ro'yxatdan o'tmagan, boshqa jamoa/guruhdan yoki umuman botdan foydalanmaydigan odamni faqat F.I.Sh. yozib shu bitta uchrashuvga qo'shish mumkin. Mehmon alohida `is_guest` foydalanuvchi sifatida saqlanadi, «Mehmon» rolida — davomat ro'yxatida va kanaldagi natijalarda boshqalar kabi ko'rinadi, lekin guruhga doimiy a'zo sifatida qo'shib bo'lmaydi.
+Bir xil «Davomat» sahifasida (shu jumladan bot orqali, «✅ Davomat» ekranida ham) **«👤 Mehmon qo'shish»** — ro'yxatdan o'tmagan, boshqa jamoa/guruhdan yoki umuman botdan foydalanmaydigan odamni faqat F.I.Sh. yozib shu bitta uchrashuvga qo'shish mumkin. Mehmon alohida `is_guest` foydalanuvchi sifatida saqlanadi, «Mehmon» rolida — davomat ro'yxatida va kanaldagi natijalarda boshqalar kabi ko'rinadi, lekin guruhga doimiy a'zo sifatida qo'shib bo'lmaydi.
+
+**Rollarni shu uchrashuv uchun tuzatish:** guruh shablonidagi rollar odatda uchrashuv yaratilishidan OLDIN tayyor bo'lishi kerak — lekin amalda ko'pincha rollar aniq bo'lganda (uchrashuv paytida yoki keyin) belgilanadi va Moderatordan tashqari hamma odatiy holda «Ishtirokchi» bo'lib chiqadi. Buni tuzatish uchun «Davomat» sahifasida (admin panelda — har bir ishtirokchi qatorida rol tugmalari; botda — «✏️ Rollarni belgilash» tugmasi) shu **bitta uchrashuv** uchun (guruh shablonini o'zgartirmasdan) istalgan ishtirokchining rolini yoqish/o'chirish mumkin — Moderatordan tashqari. Hech qanday maxsus rol qolmasa, avtomatik «Ishtirokchi» qaytadi.
 
 **Kuzatuvchi (observer):** «Foydalanuvchilar» ro'yxatida har bir odam yonida «🔭 Kuzatuvchi qilish» tugmasi bor (bosilgan zahoti foydalanuvchiga botda yangilangan menyu bilan xabar ketadi — /start kutish shart emas). Kuzatuvchi hech qanday guruhga a'zo bo'lmasa ham, botning asosiy menyusida 4 ta doimiy tugmani ko'radi: 📅 Uchrashuvlar, 👥 Guruh, 🕘 Tarix, 📊 Statistika. Har birini bosganda bot avval «qaysi guruh?» deb so'raydi (ro'yxatda — a'zolikdan qat'i nazar BARCHA guruhlar), so'ng o'sha guruh bo'yicha natijani ko'rsatadi:
 - 📅 Uchrashuvlar — tanlangan guruhning kelayotgan uchrashuvlari
@@ -132,6 +144,8 @@ Amalga oshirilgan (MVP):
 - Boshqaruv panelida kim qaysi uchrashuvda qanday rol(lar)da bo'lgani — uchrashuv bo'yicha ham, foydalanuvchi bo'yicha ham
 - Uchrashuvni tahrirlash va o'chirish (boshqaruv panelidan)
 - Mehmon (ro'yxatdan o'tmagan odam) — bitta uchrashuvga F.I.Sh. bilan qo'shiladi, botda ham, boshqaruv panelida ham
+- Uchrashuv ishtirokchisining rolini shu uchrashuv uchun (guruh shablonidan mustaqil) tuzatish — botda ham, boshqaruv panelida ham
+- Bot interfeysi 3 tilda (o'zbek lotin/kirill, ruscha) — `/til` orqali istalgan payt almashtiriladi
 
 Keyingi bosqich uchun qoldirilgan (MVP'ga kirmaydi, [PLAN.md](./PLAN.md) ga qarang):
 - Uchrashuvdan 1 soat/15 daqiqa oldin avtomatik shaxsiy eslatmalar (tez-tez ishlaydigan cron talab qiladi)

@@ -17,10 +17,16 @@ use yii\db\ActiveQuery;
  * @property int|null $active_group_id
  * @property bool $is_observer
  * @property bool $is_guest
+ * @property string $language
  * @property string $created_at
  */
 class User extends ActiveRecord
 {
+    /** Botning shaxsiy interfeys tili — kanal postlariga taalluqli emas (ular har doim o'zbekcha). */
+    public const LANG_UZ = 'uz';
+    public const LANG_UZ_CYRL = 'uz_cyrl';
+    public const LANG_RU = 'ru';
+
     public static function tableName(): string
     {
         return '{{%users}}';
@@ -35,6 +41,7 @@ class User extends ActiveRecord
             [['telegram_username', 'full_name', 'position'], 'string', 'max' => 255],
             [['phone'], 'string', 'max' => 32],
             [['is_observer', 'is_guest'], 'boolean'],
+            [['language'], 'in', 'range' => [self::LANG_UZ, self::LANG_UZ_CYRL, self::LANG_RU]],
         ];
     }
 
