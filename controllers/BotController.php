@@ -30,6 +30,11 @@ class BotController extends Controller
         $resp->headers->set('Content-Type', 'application/json');
         $resp->content = '{"ok":true}';
         $resp->send();
+        // Yii2 output buffer'ini ham tozalaymiz, keyin ulanishni yopamiz
+        while (ob_get_level() > 0) {
+            ob_end_flush();
+        }
+        flush();
         if (function_exists('fastcgi_finish_request')) {
             fastcgi_finish_request();
         }

@@ -72,11 +72,17 @@ class User extends ActiveRecord
             $user = new self();
             $user->telegram_id = $telegramId;
             $user->full_name = $username ?: ('user' . $telegramId);
-        }
-        if ($username !== null) {
             $user->telegram_username = $username;
+            $user->save(false);
+
+            return $user;
         }
-        $user->save(false);
+
+        // Faqat username o'zgarganda DB yozish — har bir requestda keraksiz UPDATE oldini oladi
+        if ($username !== null && $user->telegram_username !== $username) {
+            $user->telegram_username = $username;
+            $user->save(false);
+        }
 
         return $user;
     }
