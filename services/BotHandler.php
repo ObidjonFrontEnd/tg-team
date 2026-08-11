@@ -397,6 +397,9 @@ class BotHandler
             } elseif (empty($user->phone)) {
                 $this->askForPhone($chatId, $user);
             } else {
+                // /start bosilganda active_group_id reset qilinadi — currentGroup() qayta
+                // hisoblaydi va Moderator guruhni ustuvor tanlab oladi.
+                $user->active_group_id = null;
                 $this->sendMainMenu($chatId, $user, $this->currentGroup($user), Texts::mainMenuHint($user->language));
             }
 
