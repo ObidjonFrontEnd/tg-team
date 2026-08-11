@@ -61,8 +61,6 @@ class BotHandler
 
     /** Davomatni belgilash faqat uchrashuv boshlanganidan keyin va shuncha soat ichida ochiq. */
     private const ATTENDANCE_WINDOW_HOURS = 12;
-    /** Uchrashuv boshlanganidan keyin kamida shuncha soat o'tmaguncha «Yakunlash» tugmasi ishlamaydi. */
-    private const MIN_MEETING_DURATION_HOURS = 1;
 
     private const UZ_WEEKDAYS = ['Yak', 'Dush', 'Sesh', 'Chor', 'Pay', 'Jum', 'Shan'];
     private const UZ_MONTHS = ['', 'Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun', 'Iyul', 'Avgust', 'Sentabr', 'Oktabr', 'Noyabr', 'Dekabr'];
@@ -231,13 +229,6 @@ class BotHandler
         }
 
         return in_array((int) $kotibRoleId, GroupMemberRole::roleIdsFor($group->id, $user->id), true);
-    }
-
-    private function isTestBypassUser(User $user): bool
-    {
-        $ids = array_filter(array_map('trim', explode(',', (string) (Yii::$app->params['test.bypassTelegramIds'] ?? ''))));
-
-        return in_array((string) $user->telegram_id, $ids, true);
     }
 
     /** Har qanday ko'p bosqichli jarayonni (uchrashuv yaratish/tahrirlash, mehmon qo'shish va h.k.) bekor qilish tugmasi. */
@@ -2413,10 +2404,7 @@ class BotHandler
         $this->api->editMessageReplyMarkup($chatId, $messageId, $this->attendanceMarkingKeyboard($meeting));
     }
 
-    /**
-     * Uchrashuvni yakunlash — Moderator yoki Kotib bosishi mumkin, lekin boshlanganidan keyin
-     * kamida MIN_MEETING_DURATION_HOURS o'tmaguncha ishlamaydi (tasodifan darhol yakunlab qo'ymaslik uchun).
-     */
+    /** Uchrashuvni yakunlash — Moderator yoki Kotib bosishi mumkin, minimal davomiylik cheklovi yo'q. */
     private function finishMeeting(int $chatId, int $messageId, User $user, int $meetingId): void
     {
         $meeting = Meeting::findOne($meetingId);
@@ -2429,27 +2417,6 @@ class BotHandler
         $isKotib = $this->isKotibInGroup($group, $user);
         if (!$isModerator && !$isKotib) {
             return;
-        }
-
-        if (!$this->isTestBypassUser($user) && $meeting->started_at) {
-            $minEnd = (new \DateTime($meeting->started_at))->modify('+' . self::MIN_MEETING_DURATION_HOURS . ' hours');
-            if (new \DateTime() < $minEnd) {
-                $leftMinutes = (int) ceil((strtotime($minEnd->format('Y-m-d H:i:s')) - time()) / 60);
-                $isTrening = $group->isUmumiy();
-                $text = match (true) {
-                    $user->language === User::LANG_RU => "⏳ "
-                        . ($isTrening ? "Тренинг" : "Встреча") . " должен(на) длиться минимум " . self::MIN_MEETING_DURATION_HOURS . " ч. "
-                        . "Завершить можно будет через {$leftMinutes} мин.",
-                    $user->language === User::LANG_UZ_CYRL => "⏳ " . ($isTrening ? 'Тренинг' : 'Учрашув') . " камида "
-                        . self::MIN_MEETING_DURATION_HOURS . " соат давом этиши керак. "
-                        . "Яна {$leftMinutes} дақиқадан кейин якунлашингиз мумкин.",
-                    default => "⏳ " . ($isTrening ? 'Trening' : 'Uchrashuv') . " kamida " . self::MIN_MEETING_DURATION_HOURS . " soat davom etishi kerak. "
-                        . "Yana {$leftMinutes} daqiqadan keyin yakunlashingiz mumkin.",
-                };
-                $this->api->sendMessage($chatId, $text);
-
-                return;
-            }
         }
 
         $participants = $meeting->getParticipantsWithRoles();
