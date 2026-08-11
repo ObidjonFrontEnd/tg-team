@@ -9,6 +9,10 @@ return [
     'bot.username' => env('BOT_USERNAME', ''),
     'bot.channelId' => env('CHANNEL_ID', ''),
 
+    // Telegram Web App (Mini App) tugmalari uchun to'liq https bazaviy manzil
+    // (masalan https://team.megabuild.uz yoki mahalliy ngrok domeni).
+    'app.baseUrl' => env('APP_BASE_URL', ''),
+
     'system.migrateToken' => env('SYSTEM_MIGRATE_TOKEN', ''),
 
     'admin.login' => env('ADMIN_LOGIN', 'admin'),

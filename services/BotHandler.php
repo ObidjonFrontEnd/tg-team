@@ -516,7 +516,7 @@ class BotHandler
         } elseif ($this->isButton($text, 'history')) {
             $this->showObserverGroupPicker($chatId, $user, 'ohm', 'history');
         } elseif ($this->isButton($text, 'stats')) {
-            $this->showObserverGroupPicker($chatId, $user, 'ogs', 'stats');
+            $this->openObserverStatsWebApp($chatId, $user);
         } else {
             $this->sendMainMenu($chatId, $user, $group, Texts::mainMenuHint($user->language));
         }
@@ -784,11 +784,12 @@ class BotHandler
     // ---------------------------------------------------------- observer
 
     /**
-     * Kuzatuvchi hech qanday guruhga a'zo emas, shuning uchun har bir bo'lim
-     * («Uchrashuvlar», «Guruh», «Tarix», «Statistika») bosilganda avval qaysi guruh
-     * kerakligini so'raydi (inline ro'yxat, a'zolikdan qat'i nazar BARCHA guruhlar).
+     * Kuzatuvchi hech qanday guruhga a'zo emas, shuning uchun «Uchrashuvlar», «Guruh», «Tarix»
+     * bosilganda avval qaysi guruh kerakligini so'raydi (inline ro'yxat, a'zolikdan qat'i nazar
+     * BARCHA guruhlar). «Statistika» bundan mustasno — u Telegram Web App'ni ochadigan tugma
+     * yuboradi, guruh/davr bo'yicha filtrlash shu veb-sahifa ichida (qarang: openObserverStatsWebApp).
      */
-    /** @param string $promptKey 'upcoming'|'group'|'history'|'stats' — qaysi bo'lim so'raganini bildiradi. */
+    /** @param string $promptKey 'upcoming'|'group'|'history' — qaysi bo'lim so'raganini bildiradi. */
     private function showObserverGroupPicker(int $chatId, User $user, string $prefix, string $promptKey): void
     {
         // «Umumiy» guruh faqat uning Moderatoriga ko'rinadi — Kuzatuvchiga ham ko'rsatilmaydi.
@@ -824,11 +825,6 @@ class BotHandler
                 User::LANG_RU => "🕘 Историю какой группы хотите посмотреть?",
                 User::LANG_UZ_CYRL => "🕘 Қайси гуруҳнинг тарихини кўрмоқчисиз?",
                 User::LANG_UZ => "🕘 Qaysi guruhning tarixini ko'rmoqchisiz?",
-            ],
-            'stats' => [
-                User::LANG_RU => "📊 Статистику какой группы хотите посмотреть?",
-                User::LANG_UZ_CYRL => "📊 Қайси гуруҳнинг статистикасини кўрмоқчисиз?",
-                User::LANG_UZ => "📊 Qaysi guruhning statistikasini ko'rmoqchisiz?",
             ],
         ];
         $label = $prompts[$promptKey][$user->language] ?? $prompts[$promptKey][User::LANG_UZ];
@@ -927,106 +923,44 @@ class BotHandler
     }
 
     /**
-     * Guruhning berilgan sanadan (yoki umuman, $since === null bo'lsa) buyongi davomat sonlari,
-     * har bir a'zo bo'yicha (user_id => ['present'=>, 'absent'=>, 'excused'=>]).
-     *
-     * @return array<int, array{present:int, absent:int, excused:int}>
+     * «📊 Statistika» tugmasi — bot ichida matnli jadval endi chizilmaydi (Telegram rangli
+     * ✅/❌ emojini o'zgaruvchan kenglikda chizadi, shuning uchun ustunlarni piksel
+     * aniqligida tekislab bo'lmaydi). Buning o'rniga haqiqiy HTML jadval ko'rsatadigan
+     * Telegram Web App'ni ochuvchi tugma yuboriladi (qarang: WebAppController,
+     * ObserverStatsService) — davr/guruh bo'yicha filtrlash endi shu veb-sahifa ichida.
      */
-    private function groupAttendanceCounts(int $groupId, ?string $since): array
-    {
-        $query = Attendance::find()
-            ->alias('a')
-            ->select(['a.user_id', 'a.status', 'cnt' => 'COUNT(*)'])
-            ->innerJoin(['m' => Meeting::tableName()], 'm.id = a.meeting_id')
-            ->where(['m.group_id' => $groupId]);
-        if ($since !== null) {
-            $query->andWhere(['>=', 'm.meeting_at', $since]);
-        }
-
-        $stats = [];
-        foreach ($query->groupBy(['a.user_id', 'a.status'])->asArray()->all() as $row) {
-            $uid = (int) $row['user_id'];
-            $stats[$uid] ??= ['present' => 0, 'absent' => 0, 'excused' => 0];
-            $stats[$uid][$row['status']] = (int) $row['cnt'];
-        }
-
-        return $stats;
-    }
-
-    /**
-     * Guruh a'zolari bo'yicha: kim nechta uchrashuvga keldi, kim nechta marta kelmadi —
-     * joriy hafta / joriy oy / hammasi bo'yicha alohida-alohida (faqat "hammasi"ni ko'rsatish
-     * chalg'itadi: bitta yomon hafta butun tarixga "yoyilib" odam deyarli qatnashmagandek ko'rinadi).
-     */
-    private function showObserverGroupStats(int $chatId, User $user, int $groupId): void
+    private function openObserverStatsWebApp(int $chatId, User $user): void
     {
         if (!$user->is_observer) {
             return;
         }
 
-        $group = Group::findOne($groupId);
-        if ($group === null) {
-            return;
-        }
-
-        $members = $group->getMembers()->orderBy(['full_name' => SORT_ASC])->all();
         $lang = $user->language;
-        if (!$members) {
-            $noMembers = match ($lang) {
-                User::LANG_RU => "В группе «{$group->name}» пока нет участников.",
-                User::LANG_UZ_CYRL => "«{$group->name}» гуруҳида ҳали аъзолар йўқ.",
-                default => "«{$group->name}» guruhida hali a'zolar yo'q.",
+        $baseUrl = rtrim((string) Yii::$app->params['app.baseUrl'], '/');
+        if ($baseUrl === '') {
+            $notConfigured = match ($lang) {
+                User::LANG_RU => "Веб-приложение статистики ещё не настроено (APP_BASE_URL).",
+                User::LANG_UZ_CYRL => "Статистика веб-иловаси ҳали созланмаган (APP_BASE_URL).",
+                default => "Statistika veb-ilovasi hali sozlanmagan (APP_BASE_URL).",
             };
-            $this->api->sendMessage($chatId, $noMembers);
+            $this->api->sendMessage($chatId, $notConfigured);
 
             return;
         }
 
-        $today = new \DateTime('today');
-        $weekStart = (clone $today)->modify('-' . ((int) $today->format('N') - 1) . ' days')->format('Y-m-d 00:00:00');
-        $monthStart = $today->format('Y-m-01 00:00:00');
-
-        $weekStats = $this->groupAttendanceCounts($groupId, $weekStart);
-        $monthStats = $this->groupAttendanceCounts($groupId, $monthStart);
-        $allStats = $this->groupAttendanceCounts($groupId, null);
-
-        $finishedMeetings = $group->getMeetings()->andWhere(['status' => Meeting::STATUS_FINISHED]);
-        $weekMeetingsCount = (clone $finishedMeetings)->andWhere(['>=', 'meeting_at', $weekStart])->count();
-        $monthMeetingsCount = (clone $finishedMeetings)->andWhere(['>=', 'meeting_at', $monthStart])->count();
-        $allMeetingsCount = (clone $finishedMeetings)->count();
-
-        $lines = [];
-        foreach ($members as $member) {
-            $w = $weekStats[$member->id] ?? ['present' => 0, 'absent' => 0, 'excused' => 0];
-            $m = $monthStats[$member->id] ?? ['present' => 0, 'absent' => 0, 'excused' => 0];
-            $a = $allStats[$member->id] ?? ['present' => 0, 'absent' => 0, 'excused' => 0];
-
-            $periodLabels = match ($lang) {
-                User::LANG_RU => ['week' => 'На этой неделе', 'month' => 'В этом месяце', 'all' => 'Всего'],
-                User::LANG_UZ_CYRL => ['week' => 'Бу ҳафта', 'month' => 'Бу ой', 'all' => 'Жами'],
-                default => ['week' => 'Bu hafta', 'month' => 'Bu oy', 'all' => 'Jami'],
-            };
-            $lines[] = "• <b>{$member->full_name}</b>\n"
-                . "   {$periodLabels['week']}: ✅{$w['present']}/❌" . ($w['absent'] + $w['excused'])
-                . " · {$periodLabels['month']}: ✅{$m['present']}/❌" . ($m['absent'] + $m['excused'])
-                . " · {$periodLabels['all']}: ✅{$a['present']}/❌" . ($a['absent'] + $a['excused']);
-        }
-
-        $statsTitle = match ($lang) {
-            User::LANG_RU => ['title' => "📊 <b>{$group->name} — статистика посещаемости</b>", 'meetings' => '🗓 Встречи: на этой неделе'],
-            User::LANG_UZ_CYRL => ['title' => "📊 <b>{$group->name} — давомат статистикаси</b>", 'meetings' => '🗓 Учрашувлар: бу ҳафта'],
-            default => ['title' => "📊 <b>{$group->name} — davomat statistikasi</b>", 'meetings' => "🗓 Uchrashuvlar: bu hafta"],
+        $url = "{$baseUrl}/web-app/stats?lang={$lang}";
+        $buttonLabel = match ($lang) {
+            User::LANG_RU => '🌐 Открыть',
+            User::LANG_UZ_CYRL => '🌐 Очиш',
+            default => '🌐 Ochish',
         };
-        $monthAllLabel = match ($lang) {
-            User::LANG_RU => ' · в этом месяце %d · всего %d',
-            User::LANG_UZ_CYRL => ' · бу ой %d · жами %d',
-            default => ' · bu oy %d · jami %d',
+        $prompt = match ($lang) {
+            User::LANG_RU => "📊 Статистика посещаемости — откройте веб-приложение:",
+            User::LANG_UZ_CYRL => "📊 Давомат статистикаси — веб-иловани очинг:",
+            default => "📊 Davomat statistikasi — veb-ilovani oching:",
         };
-        $text = $statsTitle['title'] . "\n"
-            . $statsTitle['meetings'] . " {$weekMeetingsCount}" . sprintf($monthAllLabel, $monthMeetingsCount, $allMeetingsCount) . "\n\n"
-            . implode("\n", $lines);
 
-        $this->api->sendMessage($chatId, $text);
+        $this->api->sendMessage($chatId, $prompt, [[['text' => $buttonLabel, 'web_app' => ['url' => $url]]]]);
     }
 
     // ------------------------------------------------------------ meetings
@@ -2286,12 +2220,6 @@ class BotHandler
 
         if (str_starts_with($data, 'ohm:')) {
             $this->showObserverMeetingHistory($chatId, $user, (int) substr($data, 4));
-
-            return;
-        }
-
-        if (str_starts_with($data, 'ogs:')) {
-            $this->showObserverGroupStats($chatId, $user, (int) substr($data, 4));
         }
     }
 
