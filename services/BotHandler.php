@@ -37,6 +37,7 @@ class BotHandler
         'group' => [User::LANG_UZ => '👥 Guruh', User::LANG_UZ_CYRL => '👥 Гуруҳ', User::LANG_RU => '👥 Группа'],
         'history' => [User::LANG_UZ => '🕘 Tarix', User::LANG_UZ_CYRL => '🕘 Тарих', User::LANG_RU => '🕘 История'],
         'stats' => [User::LANG_UZ => '📊 Statistika', User::LANG_UZ_CYRL => '📊 Статистика', User::LANG_RU => '📊 Статистика'],
+        'lang' => [User::LANG_UZ => '🌐 Til', User::LANG_UZ_CYRL => '🌐 Тил', User::LANG_RU => '🌐 Язык'],
     ];
 
     private function btnLabel(string $key, string $lang, bool $isTrening = false): string
@@ -159,11 +160,12 @@ class BotHandler
             return [
                 [$this->btnLabel('upcoming', $lang), $this->btnLabel('group', $lang)],
                 [$this->btnLabel('history', $lang), $this->btnLabel('stats', $lang)],
+                [$this->btnLabel('lang', $lang)],
             ];
         }
 
         if ($group === null) {
-            return [];
+            return [[$this->btnLabel('lang', $lang)]];
         }
 
         $isModerator = $group->moderator_user_id === $user->id;
@@ -182,6 +184,10 @@ class BotHandler
         if ($row2) {
             $rows[] = $row2;
         }
+
+        // Har doim ko'rinadi — foydalanuvchi tilni istalgan payt bitta tugma bilan almashtira olsin
+        // (avval faqat /til buyrug'i orqali bo'lgan, lekin ko'p foydalanuvchi buyruqni bilmasdi).
+        $rows[] = [$this->btnLabel('lang', $lang)];
 
         return $rows;
     }
@@ -495,7 +501,10 @@ class BotHandler
         // Kuzatuvchi uchun «faol guruh» tushunchasi yo'q — bu qiymat oddiy a'zo/Kotib/Moderator uchun ishlatiladi.
         $group = $user->is_observer ? null : $this->currentGroup($user);
 
-        if ($this->isButton($text, 'upcoming')) {
+        if ($this->isButton($text, 'lang')) {
+            UserState::clear($user->telegram_id);
+            $this->askLanguage($chatId, $user);
+        } elseif ($this->isButton($text, 'upcoming')) {
             if ($user->is_observer) {
                 $this->showObserverGroupPicker($chatId, $user, 'oum', 'upcoming');
             } else {
@@ -1873,7 +1882,7 @@ class BotHandler
 
     private function timePickerKeyboard(string $lang = User::LANG_UZ): array
     {
-        $times = ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'];
+        $times = ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00', '22:00'];
         $rows = [];
         $row = [];
         foreach ($times as $t) {

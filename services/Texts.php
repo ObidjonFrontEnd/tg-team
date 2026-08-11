@@ -375,8 +375,12 @@ class Texts
             }
         }
 
+        $startedLine = $meeting->started_at ? date('H:i', strtotime($meeting->started_at)) : '—';
+        $endedLine = $meeting->ended_at ? date('H:i', strtotime($meeting->ended_at)) : '—';
+
         $text = "📢 <b>{$word} yakunlari:</b> «{$meeting->topic}»\n"
-            . "📅 <b>Sana va vaqt:</b> {$date}\n\n"
+            . "📅 <b>Sana va vaqt:</b> {$date}\n"
+            . "🕐 <b>Boshlandi:</b> {$startedLine} — <b>Tugadi:</b> {$endedLine}\n\n"
             . "✅ <b>Ishtirok etganlar:</b>\n" . (implode("\n", $present) ?: '—') . "\n\n"
             . "❌ <b>Kelmaganlar:</b>\n" . (implode("\n", $absent) ?: '—');
 
