@@ -382,7 +382,7 @@ class Texts
             . "📅 <b>Sana va vaqt:</b> {$date}\n"
             . "🕐 <b>Boshlandi:</b> {$startedLine} — <b>Tugadi:</b> {$endedLine}\n\n"
             . "✅ <b>Ishtirok etganlar:</b>\n" . (implode("\n", $present) ?: '—') . "\n\n"
-            . "❌ <b>Kelmaganlar:</b>\n" . (implode("\n", $absent) ?: '—');
+            . "❌ <b>Qatnashmaganlar:</b>\n" . (implode("\n", $absent) ?: '—');
 
         return $text;
     }
