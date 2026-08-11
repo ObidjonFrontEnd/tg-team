@@ -8,15 +8,17 @@ use app\models\Attendance;
 use app\models\Group;
 use app\models\Meeting;
 use app\models\User;
+use app\services\BotHandler;
 use app\services\Texts;
 use yii\console\Controller;
 use Yii;
 
 /**
- * Единственная регулярная фоновая задача MVP — еженедельный субботний отчёт по посещаемости.
- * Запускается через Plesk «Планировщик задач» (тип «Выполнить PHP-скрипт»):
- *   путь: yii
- *   аргументы: cron/weekly-report
+ * Регулярные fon vazifalar. Plesk «Планировщик задач» orqali ishga tushiriladi
+ * (tur: «Выполнить PHP-скрипт», yo'l: yii, argument: quyidagi action nomi):
+ *   - cron/weekly-report — har shanba, haftalik hisobot (bitta marta yetarli).
+ *   - cron/auto-start — vaqti kelgan e'lon qilingan uchrashuvlarni o'zi boshlaydi;
+ *     "real-time"ga yaqin bo'lishi uchun har 5-15 daqiqada bir chaqirilishi kerak.
  */
 class CronController extends Controller
 {
@@ -27,6 +29,16 @@ class CronController extends Controller
 
         foreach (Group::find()->all() as $group) {
             $this->publishWeeklyReportForGroup($group, $since, $until);
+        }
+
+        return 0;
+    }
+
+    public function actionAutoStart(): int
+    {
+        $started = (new BotHandler(Yii::$app->telegram))->autoStartDueMeetings();
+        if ($started > 0) {
+            Yii::info("Auto-started {$started} meeting(s).", __METHOD__);
         }
 
         return 0;

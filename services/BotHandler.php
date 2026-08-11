@@ -1482,6 +1482,75 @@ class BotHandler
         $this->api->sendMessage($chatId, $this->meetingCardText($meeting, $user->language), $this->meetingCardKeyboard($meeting, $user, $user->language));
     }
 
+    /** @return User[] Guruh Moderatori + shu guruhdagi barcha Kotiblar (davomatni belgilash uchun javobgarlar). */
+    private function responsibleUsers(Group $group): array
+    {
+        $ids = [$group->moderator_user_id];
+
+        $kotibRoleId = Role::find()->where(['code' => Role::CODE_KOTIB])->select('id')->scalar();
+        if ($kotibRoleId) {
+            $ids = array_merge($ids, GroupMemberRole::userIdsWithRole($group->id, (int) $kotibRoleId));
+        }
+
+        $ids = array_values(array_unique(array_filter($ids)));
+        if (!$ids) {
+            return [];
+        }
+
+        return User::find()->where(['id' => $ids])->all();
+    }
+
+    /**
+     * Vaqti kelgan (meeting_at o'tgan), lekin hali qo'lda boshlanmagan e'lon qilingan uchrashuvlarni
+     * o'zi boshlaydi — Plesk Planировщик orqali har necha daqiqada bir chaqiriladi (qarang:
+     * CronController::actionAutoStart). Moderator/Kotib endi "▶️ Boshlash"ni qo'lda bosishi shart emas,
+     * lekin xohlasa hali ham bosishi mumkin (agar u boshlanmagan bo'lsa).
+     */
+    public function autoStartDueMeetings(): int
+    {
+        $due = Meeting::find()
+            ->where(['status' => Meeting::STATUS_ANNOUNCED])
+            ->andWhere(['<=', 'meeting_at', date('Y-m-d H:i:s')])
+            ->all();
+
+        $started = 0;
+        foreach ($due as $meeting) {
+            $group = $meeting->group;
+
+            // Guruhda bir vaqtning o'zida faqat bitta uchrashuv «faol» bo'lishi mumkin — qo'lda
+            // boshlashdagi bilan bir xil qoida, avvalgi uchrashuv yakunlanmaguncha kutamiz.
+            $alreadyActive = $group->getMeetings()
+                ->andWhere(['status' => Meeting::STATUS_ATTENDANCE_MARKING])
+                ->exists();
+            if ($alreadyActive) {
+                continue;
+            }
+
+            $meeting->status = Meeting::STATUS_ATTENDANCE_MARKING;
+            $meeting->started_at = date('Y-m-d H:i:s');
+            $meeting->save(false);
+            $started++;
+
+            foreach ($this->responsibleUsers($group) as $user) {
+                if (!$user->isRegistered()) {
+                    continue;
+                }
+                $hint = match ($user->language) {
+                    User::LANG_RU => "🔔 Наступило назначенное время — начато автоматически:",
+                    User::LANG_UZ_CYRL => "🔔 Режалаштирилган вақт келди — автоматик бошланди:",
+                    default => "🔔 Rejalashtirilgan vaqt keldi — avtomatik boshlandi:",
+                };
+                $this->api->sendMessage(
+                    $user->telegram_id,
+                    $hint . "\n\n" . $this->meetingCardText($meeting, $user->language),
+                    $this->meetingCardKeyboard($meeting, $user, $user->language)
+                );
+            }
+        }
+
+        return $started;
+    }
+
     // -------------------------------------------------------- meeting edit
 
     private function openEditMenu(int $chatId, User $user, int $meetingId): void

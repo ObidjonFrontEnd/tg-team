@@ -46,6 +46,12 @@ class GroupMemberRole extends ActiveRecord
         return $query->select('role_id')->column();
     }
 
+    /** @return int[] Shu rolga ega barcha a'zolarning user_id'lari (masalan, guruhdagi barcha Kotiblar). */
+    public static function userIdsWithRole(int $groupId, int $roleId): array
+    {
+        return self::find()->where(['group_id' => $groupId, 'role_id' => $roleId])->select('user_id')->column();
+    }
+
     public static function toggle(int $groupId, int $userId, int $roleId): void
     {
         $existing = self::find()->where(['group_id' => $groupId, 'user_id' => $userId, 'role_id' => $roleId])->one();
