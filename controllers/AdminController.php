@@ -860,6 +860,7 @@ HTML;
 
         $statusLabels = [
             Attendance::STATUS_PRESENT => '✅ Keldi',
+            Attendance::STATUS_ONLINE => '💻 Onlayn',
             Attendance::STATUS_ABSENT => '❌ Kelmadi',
             Attendance::STATUS_EXCUSED => '⚠️ Sababli',
         ];
@@ -1021,7 +1022,7 @@ HTML;
             $userId = (int) Yii::$app->request->post('user_id');
             $status = (string) Yii::$app->request->post('status');
 
-            if (in_array($status, [Attendance::STATUS_PRESENT, Attendance::STATUS_ABSENT, Attendance::STATUS_EXCUSED], true)) {
+            if (in_array($status, [Attendance::STATUS_PRESENT, Attendance::STATUS_ONLINE, Attendance::STATUS_ABSENT, Attendance::STATUS_EXCUSED], true)) {
                 Attendance::mark($meeting->id, $userId, $status, $meeting->created_by);
             }
 

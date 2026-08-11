@@ -56,7 +56,7 @@ class CronController extends Controller
             if (!isset($perUser[$uid])) {
                 $perUser[$uid] = ['present' => 0, 'absent' => 0];
             }
-            if ($attendance->status === Attendance::STATUS_PRESENT) {
+            if (in_array($attendance->status, [Attendance::STATUS_PRESENT, Attendance::STATUS_ONLINE], true)) {
                 $perUser[$uid]['present']++;
                 $totalPresent++;
             } else {

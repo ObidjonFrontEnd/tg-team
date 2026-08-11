@@ -254,18 +254,21 @@ class Texts
             User::LANG_RU => match ($status) {
                 'present' => '✅ Пришёл',
                 'absent' => '❌ Не пришёл',
+                'online' => '💻 Онлайн',
                 'excused' => '⚠️ Отсутствовал по причине',
                 default => '— Не отмечено',
             },
             User::LANG_UZ_CYRL => match ($status) {
                 'present' => '✅ Келди',
                 'absent' => '❌ Келмади',
+                'online' => '💻 Онлайн',
                 'excused' => '⚠️ Сабабли келмади',
                 default => '— Белгиланмаган',
             },
             default => match ($status) {
                 'present' => '✅ Keldi',
                 'absent' => '❌ Kelmadi',
+                'online' => '💻 Onlayn',
                 'excused' => '⚠️ Sababli kelmadi',
                 default => '— Belgilanmagan',
             },
@@ -367,8 +370,10 @@ class Texts
             $line = "• {$icon} <b>{$user->full_name}</b> — <i>{$roleNames}</i>";
             if ($status === 'excused') {
                 $line .= ' (sababli)';
+            } elseif ($status === 'online') {
+                $line .= ' (onlayn)';
             }
-            if ($status === 'present') {
+            if ($status === 'present' || $status === 'online') {
                 $present[] = $line;
             } else {
                 $absent[] = $line;

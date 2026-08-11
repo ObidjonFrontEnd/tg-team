@@ -2401,7 +2401,8 @@ class BotHandler
 
         $existing = Attendance::find()->where(['meeting_id' => $meetingId, 'user_id' => $userId])->one();
         $next = match ($existing?->status) {
-            Attendance::STATUS_PRESENT => Attendance::STATUS_ABSENT,
+            Attendance::STATUS_PRESENT => Attendance::STATUS_ONLINE,
+            Attendance::STATUS_ONLINE => Attendance::STATUS_ABSENT,
             Attendance::STATUS_ABSENT => Attendance::STATUS_EXCUSED,
             Attendance::STATUS_EXCUSED => Attendance::STATUS_PRESENT,
             default => Attendance::STATUS_PRESENT,

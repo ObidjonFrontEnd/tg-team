@@ -20,6 +20,7 @@ class Attendance extends ActiveRecord
     public const STATUS_PRESENT = 'present';
     public const STATUS_ABSENT = 'absent';
     public const STATUS_EXCUSED = 'excused';
+    public const STATUS_ONLINE = 'online';
 
     public static function tableName(): string
     {
@@ -32,7 +33,7 @@ class Attendance extends ActiveRecord
             [['meeting_id', 'user_id', 'status'], 'required'],
             [['meeting_id', 'user_id', 'marked_by'], 'integer'],
             [['marked_at'], 'safe'],
-            [['status'], 'in', 'range' => [self::STATUS_PRESENT, self::STATUS_ABSENT, self::STATUS_EXCUSED]],
+            [['status'], 'in', 'range' => [self::STATUS_PRESENT, self::STATUS_ABSENT, self::STATUS_EXCUSED, self::STATUS_ONLINE]],
         ];
     }
 
