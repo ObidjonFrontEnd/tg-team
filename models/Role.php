@@ -29,6 +29,25 @@ class Role extends ActiveRecord
         return '{{%roles}}';
     }
 
+    /**
+     * @var array<int,self>|null Butun `roles` jadvali (7 ta qator, deyarli hech qachon o'zgarmaydi) —
+     * so'rov ichida bir marta o'qiladi va shu yerda saqlanadi, chunki avval har bir a'zo/har bir
+     * taqqoslash uchun alohida so'rov yuborilardi (masalan, guruh a'zolarini saralashda N*log(N) marta).
+     */
+    private static ?array $allById = null;
+
+    private static function allById(): array
+    {
+        if (self::$allById === null) {
+            self::$allById = [];
+            foreach (self::find()->orderBy('id')->all() as $role) {
+                self::$allById[$role->id] = $role;
+            }
+        }
+
+        return self::$allById;
+    }
+
     public function getMeetingUserRoles(): ActiveQuery
     {
         return $this->hasMany(MeetingUserRole::class, ['role_id' => 'id']);
@@ -46,15 +65,45 @@ class Role extends ActiveRecord
      */
     public static function assignable(): array
     {
-        return self::find()
-            ->where(['not in', 'code', [self::CODE_MODERATOR, self::CODE_ISHTIROKCHI, self::CODE_MEHMON]])
-            ->orderBy('id')
-            ->all();
+        return array_values(array_filter(
+            self::allById(),
+            static fn (self $r): bool => !in_array($r->code, [self::CODE_MODERATOR, self::CODE_ISHTIROKCHI, self::CODE_MEHMON], true)
+        ));
     }
 
     public static function ishtirokchi(): ?self
     {
-        return self::find()->where(['code' => self::CODE_ISHTIROKCHI])->one();
+        return self::byCode(self::CODE_ISHTIROKCHI);
+    }
+
+    public static function byCode(string $code): ?self
+    {
+        foreach (self::allById() as $role) {
+            if ($role->code === $code) {
+                return $role;
+            }
+        }
+
+        return null;
+    }
+
+    public static function idByCode(string $code): ?int
+    {
+        return self::byCode($code)?->id;
+    }
+
+    /** @param int[] $ids @return Role[] */
+    public static function byIds(array $ids): array
+    {
+        $all = self::allById();
+        $result = [];
+        foreach ($ids as $id) {
+            if (isset($all[$id])) {
+                $result[] = $all[$id];
+            }
+        }
+
+        return $result;
     }
 
     /** Muhimlik tartibi — ro'yxatlarda shu tartibda ko'rsatish uchun (Moderator birinchi, Ishtirokchi oxirida). */

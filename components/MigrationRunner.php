@@ -129,6 +129,11 @@ class MigrationRunner
             ])->execute();
             $transaction->commit();
 
+            // enableSchemaCache yoqilgan (config/db.php) — jadval strukturasi o'zgargan bo'lishi
+            // mumkin (yangi ustun/jadval), shuning uchun keshni shu yerda tozalaymiz, aks holda
+            // eski struktura schemaCacheDuration muddati tugagunча ko'rinib turadi.
+            Yii::$app->db->schema->refresh();
+
             return "OK {$className}\n{$printed}";
         } catch (Throwable $e) {
             $printed = trim((string) ob_get_clean());

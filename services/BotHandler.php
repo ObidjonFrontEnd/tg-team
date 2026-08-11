@@ -223,12 +223,12 @@ class BotHandler
 
     private function isKotibInGroup(Group $group, User $user): bool
     {
-        $kotibRoleId = Role::find()->where(['code' => Role::CODE_KOTIB])->select('id')->scalar();
+        $kotibRoleId = Role::idByCode(Role::CODE_KOTIB);
         if (!$kotibRoleId) {
             return false;
         }
 
-        return in_array((int) $kotibRoleId, GroupMemberRole::roleIdsFor($group->id, $user->id), true);
+        return in_array($kotibRoleId, GroupMemberRole::roleIdsFor($group->id, $user->id), true);
     }
 
     /** Har qanday ko'p bosqichli jarayonni (uchrashuv yaratish/tahrirlash, mehmon qo'shish va h.k.) bekor qilish tugmasi. */
@@ -549,7 +549,8 @@ class BotHandler
             return;
         }
 
-        usort($members, fn (User $a, User $b) => $this->memberPriority($group, $a) <=> $this->memberPriority($group, $b));
+        $roleMap = GroupMemberRole::mapForGroup($group->id);
+        usort($members, fn (User $a, User $b) => $this->memberPriority($group, $a, $roleMap) <=> $this->memberPriority($group, $b, $roleMap));
 
         $isModerator = $group->moderator_user_id === $user->id;
         $hint = match (true) {
@@ -563,7 +564,7 @@ class BotHandler
 
         $rows = [];
         foreach ($members as $member) {
-            $label = Role::formatPerson($member->full_name, $this->memberRoles($group, $member));
+            $label = Role::formatPerson($member->full_name, $this->memberRoles($group, $member, $roleMap));
             $rows[] = [['text' => $label, 'callback_data' => "gm:{$group->id}:{$member->id}"]];
         }
 
@@ -626,19 +627,25 @@ class BotHandler
         $this->api->sendMessage($chatId, $text, [[['text' => $back, 'callback_data' => "gvb:{$group->id}"]]]);
     }
 
-    /** Ro'yxatlarda tartiblash uchun: Moderator birinchi, so'ng Kotib va boshqa rollar, Ishtirokchi oxirida. */
-    private function memberPriority(Group $group, User $member): int
+    /**
+     * Ro'yxatlarda tartiblash uchun: Moderator birinchi, so'ng Kotib va boshqa rollar, Ishtirokchi oxirida.
+     *
+     * @param array<int,int[]>|null $roleMap Oldindan GroupMemberRole::mapForGroup() bilan olingan
+     * user_id => role_id[] xaritasi — ro'yxat bo'yicha saralashda har bir a'zo uchun alohida so'rov
+     * yubormaslik uchun. Berilmasa (masalan bitta a'zoni tekshirishda), o'zi bitta so'rov yuboradi.
+     */
+    private function memberPriority(Group $group, User $member, ?array $roleMap = null): int
     {
         if ($member->id === $group->moderator_user_id) {
             return Role::priority()[Role::CODE_MODERATOR];
         }
 
-        $roleIds = GroupMemberRole::roleIdsFor($group->id, $member->id);
+        $roleIds = $roleMap !== null ? ($roleMap[$member->id] ?? []) : GroupMemberRole::roleIdsFor($group->id, $member->id);
         if (!$roleIds) {
             return Role::priority()[Role::CODE_ISHTIROKCHI];
         }
 
-        return Role::bestPriority(Role::find()->where(['id' => $roleIds])->all());
+        return Role::bestPriority(Role::byIds($roleIds));
     }
 
     /**
@@ -646,12 +653,13 @@ class BotHandler
      * «Ishtirokchi» — faqat hech qanday boshqa rol yo'q odam uchun (Moderator ham hisobga olinadi).
      * Moderator + Texnik xodim kabi kombinatsiyalar bo'lishi mumkin, lekin «rol + Ishtirokchi» hech qachon bo'lmaydi.
      *
+     * @param array<int,int[]>|null $roleMap qarang memberPriority() izohi.
      * @return Role[]
      */
-    private function memberRoles(Group $group, User $member): array
+    private function memberRoles(Group $group, User $member, ?array $roleMap = null): array
     {
         $isModerator = $member->id === $group->moderator_user_id;
-        $roleIds = GroupMemberRole::roleIdsFor($group->id, $member->id);
+        $roleIds = $roleMap !== null ? ($roleMap[$member->id] ?? []) : GroupMemberRole::roleIdsFor($group->id, $member->id);
 
         if (!$roleIds && !$isModerator) {
             $ishtirokchi = Role::ishtirokchi();
@@ -659,9 +667,9 @@ class BotHandler
             return $ishtirokchi ? [$ishtirokchi] : [];
         }
 
-        $roles = Role::find()->where(['id' => $roleIds])->all();
+        $roles = Role::byIds($roleIds);
         if ($isModerator) {
-            $moderator = Role::find()->where(['code' => Role::CODE_MODERATOR])->one();
+            $moderator = Role::byCode(Role::CODE_MODERATOR);
             if ($moderator) {
                 array_unshift($roles, $moderator);
             }
@@ -1279,7 +1287,7 @@ class BotHandler
             return;
         }
 
-        $mehmonRoleId = Role::find()->where(['code' => Role::CODE_MEHMON])->select('id')->scalar();
+        $mehmonRoleId = Role::idByCode(Role::CODE_MEHMON);
         if (!$mehmonRoleId) {
             return;
         }
@@ -1487,9 +1495,9 @@ class BotHandler
     {
         $ids = [$group->moderator_user_id];
 
-        $kotibRoleId = Role::find()->where(['code' => Role::CODE_KOTIB])->select('id')->scalar();
+        $kotibRoleId = Role::idByCode(Role::CODE_KOTIB);
         if ($kotibRoleId) {
-            $ids = array_merge($ids, GroupMemberRole::userIdsWithRole($group->id, (int) $kotibRoleId));
+            $ids = array_merge($ids, GroupMemberRole::userIdsWithRole($group->id, $kotibRoleId));
         }
 
         $ids = array_values(array_unique(array_filter($ids)));
@@ -2329,12 +2337,13 @@ class BotHandler
             ]);
             $meeting->save(false);
 
-            $moderatorRoleId = Role::find()->where(['code' => Role::CODE_MODERATOR])->select('id')->scalar();
+            $moderatorRoleId = Role::idByCode(Role::CODE_MODERATOR);
             $ishtirokchiRoleId = Role::ishtirokchi()?->id;
+            $roleMap = GroupMemberRole::mapForGroup($group->id);
 
             foreach ($members as $member) {
                 $isCreator = $member->id === $creator->id;
-                $roleIds = GroupMemberRole::roleIdsFor($group->id, $member->id);
+                $roleIds = $roleMap[$member->id] ?? [];
 
                 // «Ishtirokchi» faqat hech qanday boshqa rol (shu jumladan Moderator) yo'q odamga beriladi.
                 if (!$roleIds && !$isCreator && $ishtirokchiRoleId !== null) {

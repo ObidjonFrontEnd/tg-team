@@ -17,8 +17,11 @@ return [
         $event->sender->createCommand("SET TIME ZONE 'Asia/Tashkent'")->execute();
     },
 
-    // Schema cache options (for production environment)
-    //'enableSchemaCache' => true,
-    //'schemaCacheDuration' => 60,
-    //'schemaCache' => 'cache',
+    // Schema cache — har bir so'rovda (webhook har bir Telegram apdeytida yangi PHP-FPM so'rovi bo'ladi)
+    // PostgreSQL jadval strukturasini (pg_catalog) qaytadan o'qimaslik uchun. Muhim: migratsiya
+    // qo'llanganda MigrationRunner o'zi shu keshni tozalaydi (Yii::$app->db->schema->refresh()),
+    // shuning uchun bu yerda uzoq muddat qo'yish xavfsiz.
+    'enableSchemaCache' => true,
+    'schemaCacheDuration' => 3600,
+    'schemaCache' => 'cache',
 ];

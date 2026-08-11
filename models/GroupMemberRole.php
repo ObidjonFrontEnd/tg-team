@@ -52,6 +52,28 @@ class GroupMemberRole extends ActiveRecord
         return self::find()->where(['group_id' => $groupId, 'role_id' => $roleId])->select('user_id')->column();
     }
 
+    /**
+     * roleIdsFor() ning butun guruh uchun bir so'rovda ishlaydigan varianti — a'zolar ro'yxatini
+     * chiqarishda (masalan, «Guruh a'zolari») har bir a'zo uchun alohida so'rov yubormaslik uchun.
+     *
+     * @return array<int,int[]> user_id => [role_id, ...]
+     */
+    public static function mapForGroup(int $groupId): array
+    {
+        $ishtirokchiId = Role::ishtirokchi()?->id;
+        $query = self::find()->where(['group_id' => $groupId]);
+        if ($ishtirokchiId !== null) {
+            $query->andWhere(['<>', 'role_id', $ishtirokchiId]);
+        }
+
+        $map = [];
+        foreach ($query->select(['user_id', 'role_id'])->asArray()->all() as $row) {
+            $map[(int) $row['user_id']][] = (int) $row['role_id'];
+        }
+
+        return $map;
+    }
+
     public static function toggle(int $groupId, int $userId, int $roleId): void
     {
         $existing = self::find()->where(['group_id' => $groupId, 'user_id' => $userId, 'role_id' => $roleId])->one();

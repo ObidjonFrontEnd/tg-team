@@ -14,6 +14,14 @@ class TelegramApi extends Component
 {
     public string $token = '';
 
+    /**
+     * Bitta so'rov (bitta webhook apdeyti) ichida ko'pincha bir nechta Telegram metodi ketma-ket
+     * chaqiriladi (masalan answerCallbackQuery + editMessageText, yoki bir nechta odamga xabar
+     * yuborish). cURL handle'ni qayta ishlatish TCP+TLS handshake'ni har safar qaytadan
+     * qilmaslikka imkon beradi (keep-alive) — shuning uchun uni yopmasdan saqlab qo'yamiz.
+     */
+    private $handle = null;
+
     private function endpoint(string $method): string
     {
         return "https://api.telegram.org/bot{$this->token}/{$method}";
@@ -31,8 +39,12 @@ class TelegramApi extends Component
             return ['ok' => false, 'description' => 'no token configured'];
         }
 
-        $ch = curl_init($this->endpoint($method));
+        if ($this->handle === null) {
+            $this->handle = curl_init();
+        }
+        $ch = $this->handle;
         curl_setopt_array($ch, [
+            CURLOPT_URL => $this->endpoint($method),
             CURLOPT_POST => true,
             CURLOPT_POSTFIELDS => json_encode($params, JSON_UNESCAPED_UNICODE),
             CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
@@ -41,7 +53,6 @@ class TelegramApi extends Component
         ]);
         $response = curl_exec($ch);
         $error = curl_error($ch);
-        curl_close($ch);
 
         if ($response === false) {
             \Yii::error("TelegramApi error calling {$method}: {$error}");
@@ -56,6 +67,13 @@ class TelegramApi extends Component
         }
 
         return is_array($decoded) ? $decoded : ['ok' => false, 'description' => 'invalid json'];
+    }
+
+    public function __destruct()
+    {
+        if ($this->handle !== null) {
+            curl_close($this->handle);
+        }
     }
 
     /**
