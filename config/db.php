@@ -22,6 +22,6 @@ return [
     // qo'llanganda MigrationRunner o'zi shu keshni tozalaydi (Yii::$app->db->schema->refresh()),
     // shuning uchun bu yerda uzoq muddat qo'yish xavfsiz.
     'enableSchemaCache' => true,
-    'schemaCacheDuration' => 3600,
+    'schemaCacheDuration' => 86400,
     'schemaCache' => 'cache',
 ];

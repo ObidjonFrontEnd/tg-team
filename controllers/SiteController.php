@@ -62,6 +62,24 @@ class SiteController extends Controller
         return $this->redirect(['site/login']);
     }
 
+    /**
+     * Plesk scheduler har 5 daqiqada shu URL'ni chaqiradi:
+     *   https://yourdomain.com/site/ping
+     * Bu PHP-FPM worker'larni "issiq" ushlab turadi: opcache sovimaydi,
+     * schema FileCache'da yangilanib turadi, DB ulanish tez bo'ladi.
+     */
+    public function actionPing(): Response
+    {
+        // DB connection'ni ochadi va schema cache'ni refresh qiladi (agar muddati o'tgan bo'lsa)
+        Yii::$app->db->open();
+
+        $resp = Yii::$app->response;
+        $resp->format = Response::FORMAT_RAW;
+        $resp->content = 'ok';
+
+        return $resp;
+    }
+
     private function loginPageHtml(string $error): string
     {
         $errorHtml = $error ? '<p style="color:#c0392b;margin:0 0 15px;">' . htmlspecialchars($error) . '</p>' : '';

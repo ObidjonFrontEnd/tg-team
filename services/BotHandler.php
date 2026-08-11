@@ -136,10 +136,22 @@ class BotHandler
             return null;
         }
 
-        $user->active_group_id = $groups[0]->id;
+        // Iyerarxiya: Moderator > Kotib > Ishtirokchi.
+        // Foydalanuvchi bir nechta guruhda bo'lsa, default guruh sifatida
+        // Moderator guruhi tanlanadi — aks holda pastki rol (Kotib) ustun bo'lib,
+        // Moderator tugmalari ko'rinmay qoladi.
+        $defaultGroup = $groups[0];
+        foreach ($groups as $g) {
+            if ($g->moderator_user_id === $user->id) {
+                $defaultGroup = $g;
+                break;
+            }
+        }
+
+        $user->active_group_id = $defaultGroup->id;
         $user->save(false);
 
-        return $groups[0];
+        return $defaultGroup;
     }
 
     /**
@@ -218,7 +230,17 @@ class BotHandler
         $user->active_group_id = $groupId;
         $user->save(false);
 
-        $this->showGroupMembers($chatId, $user, Group::findOne($groupId));
+        $group = Group::findOne($groupId);
+        $this->showGroupMembers($chatId, $user, $group);
+
+        // Guruh almashganda pastki tugmalar (reply keyboard) yangi guruh roliga mos ravishda
+        // yangilanishi kerak — aks holda eski guruhning tugmalari qolib, noto'g'ri amallar chaqiriladi.
+        $switched = match ($user->language) {
+            User::LANG_RU => "Активная группа: <b>{$group->name}</b>",
+            User::LANG_UZ_CYRL => "Фаол гуруҳ: <b>{$group->name}</b>",
+            default => "Faol guruh: <b>{$group->name}</b>",
+        };
+        $this->sendMainMenu($chatId, $user, $group, $switched);
     }
 
     private function isKotibInGroup(Group $group, User $user): bool
